@@ -1,0 +1,25 @@
+# Memory — lives in a separate private repo
+memory/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+venv/
+dist/
+build/
+
+# Secrets — never commit
+.env
+*.env
+config.yaml
+
+# macOS
+.DS_Store
+
+# Editor
+.idea/
+.vscode/
+*.swp

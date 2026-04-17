@@ -1,0 +1,50 @@
+env:
+  ANTHROPIC_API_KEY: ""       # only needed for evaluation.py
+  TELEGRAM_BOT_TOKEN: ""      # from @BotFather on Telegram
+  TELEGRAM_CHAT_ID: ""        # your personal Telegram chat ID
+
+memory_path: ~/budee-memory   # path to your cloned private memory repo
+
+agents:
+  - name: capture
+    file: agents/capture.py
+    prompt: prompts/capture.md
+    run: continuous
+
+  - name: clarify
+    file: agents/clarify.py
+    prompt: prompts/clarify.md
+    run: every 1 hour
+
+  - name: project
+    file: agents/project.py
+    prompt: prompts/project.md
+    run: manual
+    usage: python agents/project.py <project_name>
+
+  - name: evaluation
+    file: agents/evaluation.py
+    prompt: prompts/evaluation.md
+    run: manual weekly
+    usage: python agents/evaluation.py
+
+tools:
+  - name: telegram
+    file: tools/telegram.py
+
+  - name: terminal
+    file: tools/terminal.py
+
+  - name: browser
+    file: tools/browser.py
+
+  - name: transcribe
+    file: tools/transcribe.py
+
+projects:
+  - ai_neuroscience
+  - carousee
+  - seldon
+  - the_mirror
+  - social_media
+  - find_a_job
