@@ -1,4 +1,4 @@
-# budee
+# bismuth
 
 A GTD agentic system. Four agents, four tools, one memory folder.
 
@@ -47,7 +47,7 @@ home/
 1. Install app dependencies: `brew bundle` (installs Pulsar)
 2. Install Python dependencies: `pip install anthropic faster-whisper requests pyyaml`
 3. Install browser: `npm install -g silicon-browser && silicon-browser install`
-4. Log in to sites once: `silicon-browser --profile budee open <url>`
+4. Log in to sites once: `silicon-browser --profile silicon open <url>`
 5. Fill in `config.yaml` — add `ANTHROPIC_API_KEY`
 6. Create `memory/<project>/vision.md` for each project
 

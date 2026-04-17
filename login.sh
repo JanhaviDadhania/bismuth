@@ -1,9 +1,9 @@
 #!/bin/bash
 # One-time login script. Run this once per machine.
-# Logs into each social platform under the shared 'budee' silicon-browser profile.
+# Logs into each social platform under the shared 'silicon' silicon-browser profile.
 # Once logged in, close the browser — the session is saved automatically.
 
-PROFILE="budee"
+PROFILE="silicon"
 
 echo "Opening social platforms for login. Log in to each, then close the browser."
 echo "Your sessions will be saved to the '$PROFILE' profile and reused by agents."

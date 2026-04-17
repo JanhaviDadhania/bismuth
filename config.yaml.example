@@ -3,7 +3,7 @@ env:
   TELEGRAM_BOT_TOKEN: ""      # from @BotFather on Telegram
   TELEGRAM_CHAT_ID: ""        # your personal Telegram chat ID
 
-memory_path: ~/budee-memory   # path to your cloned private memory repo
+memory_path: ~/bismuth-memory   # path to your cloned private memory repo
 
 agents:
   - name: capture

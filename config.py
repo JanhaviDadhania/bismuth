@@ -1,5 +1,5 @@
 """
-Config loader — single source of truth for budee settings.
+Config loader — single source of truth for bismuth settings.
 Import MEMORY_DIR and BASE_DIR from here instead of computing paths in each agent.
 """
 

@@ -47,16 +47,16 @@ When done, print:
 
 For all web browsing, use `silicon-browser` via the Bash tool. Never use built-in web fetch or any other browser tool.
 
-Profile is `budee` — it has your logged-in sessions for all social platforms.
+Profile is `silicon` — it has your logged-in sessions for all social platforms.
 
 ```bash
-silicon-browser --profile budee open <url>
-silicon-browser --profile budee snapshot -i
-silicon-browser --profile budee click <ref>
-silicon-browser --profile budee fill <ref> "text"
-silicon-browser --profile budee get text <ref>
-silicon-browser --profile budee screenshot <path>
-silicon-browser --profile budee close
+silicon-browser --profile silicon open <url>
+silicon-browser --profile silicon snapshot -i
+silicon-browser --profile silicon click <ref>
+silicon-browser --profile silicon fill <ref> "text"
+silicon-browser --profile silicon get text <ref>
+silicon-browser --profile silicon screenshot <path>
+silicon-browser --profile silicon close
 ```
 
 Always call `snapshot -i` after `open` to get element refs before interacting with the page.

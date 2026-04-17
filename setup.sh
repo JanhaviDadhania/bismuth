@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "Setting up budee..."
+echo "Setting up bismuth..."
 
 # ─────────────────────────────────────────────
 # Python dependencies
