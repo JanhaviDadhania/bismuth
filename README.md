@@ -3,7 +3,7 @@
 
 [MEMEX](https://en.wikipedia.org/wiki/Memex) using LLMs.  
 
-Vannevar Bush wrote about concept of memex after world war 2.  
+Vannevar Bush wrote about concept of memex after world war 2; when a mini mechanical revolution had created very reliable tools.
 Memex is a machine he envisioned that works as an external brain for humans. Memex looks like a big furniture piece, half room size with a desk. The desk has buttons, screens, levers, a typewriter; and the other end of the Memex is a huge storage box. The storage box saves content in microfilm and mechanically processes it. It takes in any number of premises and churns out conclusions. If the user wishes to consult a certain book, he clicks and the book appears before him on one of the screens. There are special buttons to skip to the next chapter, and to skip to the next book.
 
 ## Implementation with LLMs
