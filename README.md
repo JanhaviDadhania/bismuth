@@ -1,12 +1,12 @@
-# bismuth
+# Bismuth
+<img width="300" height="300" alt="image" src="./pngegg.png" />
 
-implementation of memex using LLMs.
-<img width="919" height="720" alt="image" src="https://github.com/user-attachments/assets/744f10c9-37d3-48d5-a193-ecd4841ba683" />
+[MEMEX](https://en.wikipedia.org/wiki/Memex) using LLMs.  
 
 Vannevar Bush wrote about concept of memex after world war 2.  
 Memex is a machine he envisioned that works as an external brain for humans. Memex looks like a big furniture piece, half room size with a desk. The desk has buttons, screens, levers, a typewriter; and the other end of the Memex is a huge storage box. The storage box saves content in microfilm and mechanically processes it. It takes in any number of premises and churns out conclusions. If the user wishes to consult a certain book, he clicks and the book appears before him on one of the screens. There are special buttons to skip to the next chapter, and to skip to the next book.
 
-## my implementation
+## Implementation with LLMs
 original memex had two interacting units. brain and storage system.
 i have three. brain, storage and LLM.
 
