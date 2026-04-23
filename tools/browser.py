@@ -1,17 +1,17 @@
 """
 Browser Tool
 Web automation for GTD agents via silicon-browser CLI.
-All commands run under the shared --profile budee so agents
+All commands run under the shared --profile silicon so agents
 reuse your logged-in sessions automatically.
 
 Install: npm install -g silicon-browser && silicon-browser install
-Login:   silicon-browser --profile budee open <url>  (do this once per site)
+Login:   silicon-browser --profile silicon open <url>  (do this once per site)
 """
 
 import subprocess
 import os
 
-PROFILE = "budee"
+PROFILE = "silicon"
 
 
 # ─────────────────────────────────────────────
