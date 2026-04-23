@@ -39,6 +39,8 @@ Go through each numbered entry one by one. For each entry, decide:
 - **Actionable** → go to Step 3
 - **Not actionable** → go to Step 4
 
+If janhavi says she has finished or completed something, find it in the relevant todo file, remove it, and log the removal in `memory/tracking.md`. Do not re-file it as a new task.
+
 ## Step 3 — Processing actionable items
 
 Classify the item into one of three types:
