@@ -22,6 +22,12 @@ agents:
     run: manual
     usage: python agents/project.py <project_name>
 
+  - name: coffeechat
+    file: agents/coffeechat.py
+    prompt: prompts/coffeechat.md
+    run: manual
+    usage: python agents/coffeechat.py <project_name>
+
   - name: evaluation
     file: agents/evaluation.py
     prompt: prompts/evaluation.md

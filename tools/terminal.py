@@ -10,7 +10,7 @@ import os
 
 def _git_sync():
     """Auto-commit and push the memory repo. Fire-and-forget — never blocks on failure."""
-    memory_dir = os.environ.get("BUDEE_MEMORY_DIR", "")
+    memory_dir = os.environ.get("BISMUTH_MEMORY_DIR", "")
     if not memory_dir:
         return
     try:
