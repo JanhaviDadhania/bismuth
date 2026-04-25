@@ -14,15 +14,20 @@ Read `memory/{project_name}/vision.md` to understand what this project is about 
 
 Before reading any new tasks, check `memory/{project_name}/pending_questions.md`. If it exists and has entries, look for replies from janhavi in `memory/capture.md` that match a pending entry.
 
-Each entry is either `STATUS: awaiting_approval` or `STATUS: awaiting_clarification`.
+Each entry has one of these statuses: `awaiting_approval`, `awaiting_clarification`, or `brainstorming`.
 
 **For awaiting_approval entries:** look for a reply like "go", "yes", "start", "approved", or similar confirmation.
-- If approved: mark the task as approved (add `[APPROVED]` prefix in agents_nexttodo.md), remove from pending_questions.md.
-- If not yet replied: leave in pending_questions.md and do not spawn a subagent for it this run.
+- If approved: mark the task as `[APPROVED]` in agents_nexttodo.md, remove from pending_questions.md.
+- If not yet replied: leave in pending_questions.md.
 
 **For awaiting_clarification entries:** look for a reply that answers the question.
 - If answered: update the task in agents_nexttodo.md with the clarification, mark as `[APPROVED]`, remove from pending_questions.md.
-- If not yet replied: leave in pending_questions.md and skip this run.
+- If not yet replied: leave in pending_questions.md.
+
+**For brainstorming entries:** look for janhavi's response to the proposed plan.
+- If she approves ("looks good", "go", "approved", etc.): finalise the plan — see the Brainstorming section below.
+- If she suggests changes: incorporate them, send a revised proposal, update the entry to the next round.
+- If not yet replied: leave in pending_questions.md.
 
 If there is ANY ambiguity about whether a reply matches, send a Telegram message quoting both and ask janhavi to confirm. Only act once fully confident.
 
@@ -32,12 +37,12 @@ After resolving pending entries, proceed to Step 1.
 
 1. Read `memory/{project_name}/agents_nexttodo.md`.
 2. If it is empty, check `memory/{project_name}/deferred-todo.md` for items that might now be actionable. Move any ready items to agents_nexttodo.md, then proceed. If nothing is actionable, stop.
-3. For every task that does not already have `[APPROVED]`, evaluate whether it is well-defined (see criteria below).
+3. For every task that does not already have `[APPROVED]`, classify it as CLEAR, UNCLEAR, or COMPLEX (see criteria below).
 4. Print a summary to the terminal for every task:
    ```
    [CLEAR]   "write a 600-word draft on X and save to support/"
    [UNCLEAR] "update bismuth" — unclear what 'update' means; no output specified
-   [UNCLEAR] "check in with the seldon deploy" — no action or output defined
+   [COMPLEX] "build a profile page for bismuth" — multi-step, needs planning before execution
    ```
 
 ### Step 2 — Send Telegram and poll for reply
@@ -51,16 +56,23 @@ CLEAR (ready to go):
 • "write a 600-word draft on X and save to support/"
 • "post the carousel to instagram"
 
+COMPLEX (let's plan this first):
+• "build a profile page for bismuth" — here's how I'd break it down:
+  1. Define page structure and sections
+  2. Write content for each section
+  3. Build and deploy
+  Does this look right? Any changes before I start?
+
 UNCLEAR (need your input):
 • "update bismuth" — what should I update, and what does done look like?
-• "check in with seldon deploy" — do you want me to check the logs, fix something specific, or just verify it's running?
 
-Reply "go" to start the clear tasks. For unclear ones, answer the question or say "keep" to leave it in the list.
+Reply "go" to start the clear tasks. For complex ones, say "looks good" or suggest changes. For unclear ones, answer or say "keep" to skip.
 ```
 
 Write one entry per task to `memory/{project_name}/pending_questions.md`:
 ```
 - [date] TASK: "<task text>" | STATUS: awaiting_approval
+- [date] TASK: "<task text>" | STATUS: brainstorming | ROUND: 1
 - [date] TASK: "<task text>" | STATUS: awaiting_clarification | QUESTION: <what you need to know>
 ```
 
@@ -129,17 +141,85 @@ Exit the loop only when **every task in agents_nexttodo.md is either done (remov
 
 When the loop exits: send janhavi a Telegram: "All done for {project_name} this session. X tasks completed, Y kept for later."
 
-## Is a task well-defined?
+## Classifying a task
 
-A task is well-defined if a subagent could complete it without needing to ask a single follow-up question. Check all of the following:
+### CLEAR
+A task is CLEAR if a single subagent could complete it without any follow-up questions:
+- Action is obvious (write, post, fix, analyse, etc.)
+- Scope is bounded — clear start and end
+- Output is specified — what to produce and where to save it
+- No judgement calls only janhavi can make
+- All dependencies exist and are accessible
 
-- **Action is clear** — it is obvious what the agent should *do* (write, research, post, edit, analyse, etc.)
-- **Scope is bounded** — the task has a clear start and end; not open-ended like "improve the project" or "think about X"
-- **Output is specified** — it is clear what the agent should produce (a file, a post, a report, a code change, etc.)
-- **No ambiguous decisions** — the task does not require a judgement call that only janhavi can make (e.g. "pick the best option", "decide whether to launch")
-- **Dependencies are satisfied** — if the task refers to another file, piece of work, or external resource, that thing exists and is accessible
+### UNCLEAR
+A task is UNCLEAR if it is missing one of the CLEAR criteria. Ask janhavi for the single most important missing piece before doing anything.
 
-If any of these are missing or unclear, the task is **not well-defined** — ask janhavi before spawning.
+### COMPLEX
+A task is COMPLEX if it is well-understood but too large or multi-step to hand to a single subagent as-is. Signs:
+- Requires multiple distinct phases or subtasks
+- Involves decisions or tradeoffs along the way that should be agreed upfront
+- Would benefit from being broken into parallel workstreams
+- Has meaningful risk of wasted effort if the approach is wrong
+
+COMPLEX tasks need a plan before execution. Do not spawn subagents for them until the plan is approved.
+
+## Brainstorming complex tasks
+
+When a task is COMPLEX:
+
+1. Propose a breakdown in the Telegram message — list the subtasks you'd run, the order, and any decisions you anticipate.
+2. Write a `STATUS: brainstorming | ROUND: 1` entry to `pending_questions.md` and stop.
+3. When janhavi replies:
+   - **Approves** ("looks good", "go", etc.) → finalise the plan (see below)
+   - **Suggests changes** → incorporate them, send a revised proposal, increment ROUND in pending_questions.md
+   - Repeat until approved
+
+### Finalising the plan
+
+Once approved, create a plan file at:
+```
+memory/{project_name}/plans/<task_slug>/plan.md
+```
+
+Format:
+```markdown
+# Plan: <task name>
+Date: <today>
+Status: in_progress
+
+## Objective
+<one paragraph — what we're trying to achieve and why>
+
+## Subtasks
+- [ ] 1. <subtask description> — <which subagent will do this>
+- [ ] 2. <subtask description>
+- [ ] 3. <subtask description>
+
+## Decisions
+<key decisions agreed during brainstorm>
+```
+
+Then:
+- Mark the task as `[APPROVED]` in agents_nexttodo.md
+- Remove from pending_questions.md
+- Send janhavi a Telegram: "Plan finalised for '<task>'. Starting now."
+
+### Subagents on complex tasks
+
+For each subtask in the plan, spawn a subagent and include in its prompt:
+- The plan file path
+- Which subtask number it is responsible for
+- Instruction to update its subtask line when done:
+  ```
+  Update the plan file — change `- [ ] N.` to `- [x] N.` and append ` (DONE: <one-line summary>)`
+  ```
+
+### Tracking complex tasks
+
+When all subtasks are done, append to `tracking.md`:
+```
+- [date] COMPLEX TASK DONE: "<task>" → plan: memory/{project_name}/plans/<slug>/plan.md
+```
 
 ## Asking janhavi for clarification
 
@@ -230,7 +310,9 @@ If a subagent fails or returns an error:
 - Always write to disk before moving on. Nothing lives only in context.
 - Log every completed task in tracking.md with date and summary.
 - Never spawn a subagent without janhavi's approval. Every task needs `[APPROVED]` before execution.
+- Never spawn subagents for a COMPLEX task until the plan is approved and written to disk.
 - Never ask more than one question per unclear task. Identify the single most important unknown.
+- Always give subagents their plan file path and tell them to update their subtask checkbox when done.
 - Always print the clarity assessment to terminal before sending the Telegram.
 - Check pending_questions.md at the start of every run before reading new tasks.
 - Send one Telegram per loop iteration covering all pending tasks — not one per task.

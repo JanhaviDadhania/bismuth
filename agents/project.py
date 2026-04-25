@@ -42,13 +42,15 @@ def build_message(project_name: str, general: bool) -> tuple[str, Path, Path, Pa
         nexttodo_path = MEMORY_DIR / "agents_nexttodo.md"
         pending_path  = MEMORY_DIR / "pending_questions.md"
     else:
+        project_dir = MEMORY_DIR / "projects" / project_name
         system = (
             template_text
+            .replace("memory/{project_name}/", f"{project_dir}/")
             .replace("{project_name}", project_name)
             .replace("memory/", f"{MEMORY_DIR}/")
         )
-        nexttodo_path = MEMORY_DIR / project_name / "agents_nexttodo.md"
-        pending_path  = MEMORY_DIR / project_name / "pending_questions.md"
+        nexttodo_path = project_dir / "agents_nexttodo.md"
+        pending_path  = project_dir / "pending_questions.md"
 
     capture_path = MEMORY_DIR / "capture.md"
 
@@ -61,7 +63,8 @@ To send Telegram messages to janhavi, use the Bash tool:
 
 ---
 
-Work through all tasks in {nexttodo_path}."""
+Work through all tasks in {nexttodo_path}.
+If that path does not exist, do not guess — stop and report the missing file."""
 
     return user_message, nexttodo_path, pending_path, capture_path
 
