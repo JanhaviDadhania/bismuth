@@ -143,6 +143,12 @@ When you create a new project:
 
 Never hardcode project names — always read from `config.yaml`.
 
+## Coffeechat context
+
+Coffeechat is a project-planning agent for GTD's Natural Planning Model. Its files live in `memory/projects/<project_name>/coffeechat/`, with phase files like `definition.md`, `outcome.md`, `brainstorm.md`, and `organisation.md`.
+
+If a capture item is clearly about starting, continuing, or answering a coffeechat planning conversation for a project, route it to `memory/projects/<project_name>/agents_nexttodo.md` so the coffeechat agent can pick it up.
+
 ## Format for entries
 
 When appending to any file, use a simple bullet format:
