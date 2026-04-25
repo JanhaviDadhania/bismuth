@@ -68,3 +68,7 @@ home/
 python agents/project.py <project_name>   # run a project agent
 python agents/evaluation.py              # weekly report
 ```
+
+## Bismuth's Stuff
+<img width="2109" height="1179" alt="bismuthcareditcard" src="https://github.com/user-attachments/assets/75d7b999-bbcf-4a36-b943-60f0c9c73084" />
+
