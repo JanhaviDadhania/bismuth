@@ -1,0 +1,6 @@
+- want to have learnt academically
+- want to have made good use of my brain
+- do not want to have done repetitive tasks
+- want to have exposed myself to newer tasks
+- do not want to work on repetitive tasks at all; I consider it a waste of my precious life
+- want to have also explored what my body could do

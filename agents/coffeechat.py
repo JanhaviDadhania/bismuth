@@ -29,7 +29,7 @@ def get_current_phase(project_name: str) -> str:
         ("organisation", base / "coffeechat" / "organisation.md"),
     ]
     for phase, path in files:
-        if not path.exists() or not path.read_text().lstrip().startswith("DONE"):
+        if not path.exists() or not path.read_text().lstrip().lower().startswith("done"):
             return phase
     return "done"
 
@@ -136,6 +136,8 @@ def run(project_name: str):
             continue
 
         if not lines:
+            if is_complete(project_name):
+                break
             continue
 
         if is_complete(project_name):

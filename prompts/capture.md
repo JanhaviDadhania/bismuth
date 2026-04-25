@@ -33,6 +33,8 @@ Each Telegram message = one numbered entry. Multi-line content stays under its n
 - Do not hold anything in context. If you read it, it goes to the file immediately.
 - One Telegram message = one numbered entry. If someone sends 5 messages, that is 5 numbered entries. Multi-line messages stay indented under their number.
 - Keep entries short but preserve all meaning and context from the original message.
+- Coffeechat is a separate project-planning agent that works in `memory/projects/<project_name>/coffeechat/`.
+- If a message is about project planning, purpose, outcome, brainstorming, or "coffeechat", still capture it normally. Do not structure or route it here.
 
 ## If you act on a message
 
