@@ -1,6 +1,8 @@
+<p align="center"><em>your mind is for having ideas, not for holding them, not for executing them</em></p>
+
 # bismuth
 
-A GTD agentic system. Four agents, four tools, one memory folder.
+A GTD agentic system. Five agents, four tools, one memory folder.
 
 ## Structure
 
@@ -10,6 +12,7 @@ home/
 │   ├── capture.py        runs continuously, listens to Telegram
 │   ├── clarify.py        runs every 1 hour, routes capture.md
 │   ├── project.py        run manually per project
+│   ├── coffeechat.py     run manually per project for planning
 │   └── evaluation.py     run manually once a week
 ├── tools/
 │   ├── telegram.py
@@ -20,6 +23,7 @@ home/
 │   ├── capture.md
 │   ├── clarify.md
 │   ├── project.md
+│   ├── coffeechat.md
 │   └── evaluation.md
 ├── memory/               created at runtime by the agents
 │   ├── capture.md
@@ -56,5 +60,6 @@ home/
 ```bash
 ./run.sh                                  # starts capture + clarify
 python agents/project.py <project_name>   # run a project agent
+python agents/coffeechat.py <project_name>  # run a coffeechat planning session
 python agents/evaluation.py              # weekly report
 ```
