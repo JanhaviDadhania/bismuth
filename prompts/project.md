@@ -47,27 +47,27 @@ After resolving pending entries, proceed to Step 1.
 
 ### Step 2 — Send Telegram and poll for reply
 
-After printing the terminal summary, send janhavi **one Telegram message** covering all tasks. Format:
+After printing the terminal summary, send janhavi **one Telegram message** covering all tasks.
 
-```
-Project {project_name} — ready to start. Here's what I found:
+Write the message like this:
+- Start with: `Project {project_name} — here is what I found in agents_nexttodo.md:`
+- Use `-` bullets (not `•`)
+- **Always include the complete task text verbatim — never truncate or abbreviate**
 
-CLEAR (ready to go):
-• "write a 600-word draft on X and save to support/"
-• "post the carousel to instagram"
+For each category present, include a section:
 
-COMPLEX (let's plan this first):
-• "build a profile page for bismuth" — here's how I'd break it down:
-  1. Define page structure and sections
-  2. Write content for each section
-  3. Build and deploy
-  Does this look right? Any changes before I start?
+**CLEAR (ready to go):**
+List each CLEAR task as a `-` bullet with its full text. No extra commentary needed.
 
-UNCLEAR (need your input):
-• "update bismuth" — what should I update, and what does done look like?
+**COMPLEX (let's plan this first):**
+List each COMPLEX task as a `-` bullet with its full text, followed by ` — here's how I'd break it down:` and a numbered breakdown, then `Does this look right? Any changes before I start?`
 
-Reply "go" to start the clear tasks. For complex ones, say "looks good" or suggest changes. For unclear ones, answer or say "keep" to skip.
-```
+**UNCLEAR (need your input):**
+List each UNCLEAR task as a `-` bullet with its full text, followed by ` — ` and your specific question. Your question must name exactly what you searched for and could not find. Do not write generic questions like "what does done look like?" — write what *this specific task* is missing. Example: "what is budee? Not in reference files. Is it a CLI tool or a Python package?" is good. "what should I update?" is not.
+
+Close the message with: `Reply go to start the clear tasks, or answer the unclear ones and I will pick them up next run.`
+
+Omit any section (CLEAR / COMPLEX / UNCLEAR) that has no tasks in it.
 
 Write one entry per task to `memory/{project_name}/pending_questions.md`:
 ```
