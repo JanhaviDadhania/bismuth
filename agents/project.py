@@ -83,6 +83,25 @@ def has_pending(pending_path: Path) -> bool:
     return pending_path.exists() and bool(pending_path.read_text().strip())
 
 
+def is_satisfied(capture_path: Path) -> bool:
+    """Ask Claude whether janhavi's reply indicates she is satisfied and ready to close."""
+    if not capture_path.exists():
+        return False
+    reply = capture_path.read_text().strip()
+    if not reply:
+        return False
+    prompt = (
+        f'Janhavi was asked if she is satisfied with the work done and ready to close the session.\n'
+        f'Her reply: "{reply}"\n\n'
+        f'Is she satisfied and ready to close? Answer only "yes" or "no".'
+    )
+    result = subprocess.run(
+        ["claude", "-p", prompt, "--dangerously-skip-permissions"],
+        capture_output=True, text=True, cwd=str(BASE_DIR),
+    )
+    return "yes" in result.stdout.strip().lower()
+
+
 def wait_for_reply(capture_path: Path) -> None:
     """Poll Telegram directly (long-poll 30s) until a reply arrives, then write it to capture.md."""
     from tools.telegram import get_updates
@@ -129,8 +148,14 @@ def run(project_name: str, general: bool = False):
             print(f"[project-agent] claude -p exited with code {rc}")
 
         if is_done(nexttodo_path):
-            print("[project-agent] All tasks done or kept. Exiting.")
-            break
+            print("[project-agent] All tasks done or kept. Waiting for satisfaction confirmation...")
+            wait_for_reply(capture_path)
+            if is_satisfied(capture_path):
+                print("[project-agent] Janhavi confirmed satisfied. Exiting.")
+                capture_path.write_text("")
+                break
+            # Not satisfied — loop back; next claude session reads the reply from capture.md
+            continue
 
         if has_pending(pending_path):
             wait_for_reply(capture_path)

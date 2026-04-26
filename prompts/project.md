@@ -139,7 +139,14 @@ After finishing all approved tasks, go back to **Step 1**.
 
 Exit the loop only when **every task in agents_nexttodo.md is either done (removed) or marked `[KEEP]`**. Tasks that are UNCLEAR without a `[KEEP]` marker keep the loop alive — re-assess them, send Telegram, poll, execute.
 
-When the loop exits: send janhavi a Telegram: "All done for {project_name} this session. X tasks completed, Y kept for later."
+When the loop exits: send janhavi a Telegram:
+```
+All done for {project_name} this session. X tasks completed, Y kept for later.
+
+Are you satisfied with what was completed? Reply "yes", "satisfied", or "looks good" to close — or tell me what else you'd like done.
+```
+
+Then stop and wait. The Python runner will hold the session open until janhavi confirms. Do not exit on your own.
 
 ## Classifying a task
 
@@ -323,3 +330,4 @@ If a subagent fails or returns an error:
 - If a task creates new sub-tasks, add them to agents_nexttodo.md.
 - Do not work on tasks from other projects.
 - Do not delete project files.
+- Never close the session after finishing all tasks without first getting janhavi's confirmation that she is satisfied.
