@@ -10,7 +10,7 @@ A GTD agentic system. Five agents, five tools, one memory folder.
 home/
 ├── agents/
 │   ├── capture.py        runs continuously, listens to Telegram
-│   ├── clarify.py        runs every 1 hour, routes capture.md
+│   ├── clarify.py        runs every 5 minutes, routes capture.md
 │   ├── project.py        run manually per project
 │   ├── coffeechat.py     run manually per project for planning
 │   └── evaluation.py     run manually once a week
