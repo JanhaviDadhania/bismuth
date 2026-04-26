@@ -1,8 +1,8 @@
-<p align="center"><em>your mind is for having ideas, not for holding them, not for executing them</em></p>
+<p align="center"><em>your mind is for having ideas, not holding them</em></p>
 
 # bismuth
 
-A GTD agentic system. Five agents, four tools, one memory folder.
+A GTD agentic system. Five agents, five tools, one memory folder.
 
 ## Structure
 
@@ -16,6 +16,7 @@ home/
 │   └── evaluation.py     run manually once a week
 ├── tools/
 │   ├── telegram.py
+│   ├── telegram_cli.py
 │   ├── terminal.py
 │   ├── browser.py
 │   └── transcribe.py
@@ -25,7 +26,7 @@ home/
 │   ├── project.md
 │   ├── coffeechat.md
 │   └── evaluation.md
-├── memory/               created at runtime by the agents
+├── memory/               runtime state, created by agents
 │   ├── capture.md
 │   ├── capture/              media files (photos, videos, voice)
 │   ├── nexttodo.md
@@ -45,6 +46,8 @@ home/
 ├── run.sh
 └── config.yaml
 ```
+
+Persistent long-term memory lives in a separate repo: `bismuth-memory/`.
 
 ## Setup
 
