@@ -42,13 +42,15 @@ def build_message(project_name: str, general: bool) -> tuple[str, Path, Path, Pa
         nexttodo_path = MEMORY_DIR / "agents_nexttodo.md"
         pending_path  = MEMORY_DIR / "pending_questions.md"
     else:
+        project_dir = MEMORY_DIR / "projects" / project_name
         system = (
             template_text
+            .replace("memory/{project_name}/", f"{project_dir}/")
             .replace("{project_name}", project_name)
             .replace("memory/", f"{MEMORY_DIR}/")
         )
-        nexttodo_path = MEMORY_DIR / project_name / "agents_nexttodo.md"
-        pending_path  = MEMORY_DIR / project_name / "pending_questions.md"
+        nexttodo_path = project_dir / "agents_nexttodo.md"
+        pending_path  = project_dir / "pending_questions.md"
 
     capture_path = MEMORY_DIR / "capture.md"
 
@@ -61,7 +63,8 @@ To send Telegram messages to janhavi, use the Bash tool:
 
 ---
 
-Work through all tasks in {nexttodo_path}."""
+Work through all tasks in {nexttodo_path}.
+If that path does not exist, do not guess — stop and report the missing file."""
 
     return user_message, nexttodo_path, pending_path, capture_path
 
@@ -78,6 +81,25 @@ def is_done(nexttodo_path: Path) -> bool:
 
 def has_pending(pending_path: Path) -> bool:
     return pending_path.exists() and bool(pending_path.read_text().strip())
+
+
+def is_satisfied(capture_path: Path) -> bool:
+    """Ask Claude whether janhavi's reply indicates she is satisfied and ready to close."""
+    if not capture_path.exists():
+        return False
+    reply = capture_path.read_text().strip()
+    if not reply:
+        return False
+    prompt = (
+        f'Janhavi was asked if she is satisfied with the work done and ready to close the session.\n'
+        f'Her reply: "{reply}"\n\n'
+        f'Is she satisfied and ready to close? Answer only "yes" or "no".'
+    )
+    result = subprocess.run(
+        ["claude", "-p", prompt, "--dangerously-skip-permissions"],
+        capture_output=True, text=True, cwd=str(BASE_DIR),
+    )
+    return "yes" in result.stdout.strip().lower()
 
 
 def wait_for_reply(capture_path: Path) -> None:
@@ -126,8 +148,14 @@ def run(project_name: str, general: bool = False):
             print(f"[project-agent] claude -p exited with code {rc}")
 
         if is_done(nexttodo_path):
-            print("[project-agent] All tasks done or kept. Exiting.")
-            break
+            print("[project-agent] All tasks done or kept. Waiting for satisfaction confirmation...")
+            wait_for_reply(capture_path)
+            if is_satisfied(capture_path):
+                print("[project-agent] Janhavi confirmed satisfied. Exiting.")
+                capture_path.write_text("")
+                break
+            # Not satisfied — loop back; next claude session reads the reply from capture.md
+            continue
 
         if has_pending(pending_path):
             wait_for_reply(capture_path)

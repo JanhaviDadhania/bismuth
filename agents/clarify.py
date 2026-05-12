@@ -1,6 +1,6 @@
 """
 Clarify Agent
-Calls `claude -p` every 1 hour to classify and route items from memory/capture.md.
+Calls `claude -p` every 5 minutes to classify and route items from memory/capture.md.
 No Anthropic API key needed.
 """
 
@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from config import BASE_DIR, MEMORY_DIR
 
-INTERVAL = 1 * 60 * 60  # 1 hour
+INTERVAL = 5 * 60  # 5 minutes
 
 
 def run():
@@ -50,12 +50,12 @@ Process {MEMORY_DIR}/capture.md now. Read it, classify every item, route each to
 
 
 if __name__ == "__main__":
-    print("Clarify agent started. Running every 1 hour.")
+    print("Clarify agent started. Running every 5 minutes.")
     while True:
         try:
             print("Running clarify...")
             run()
-            print("Done. Next run in 1 hour.")
+            print("Done. Next run in 5 minutes.")
         except KeyboardInterrupt:
             print("\nClarify agent stopped.")
             break

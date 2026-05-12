@@ -1,3 +1,5 @@
+<p align="center"><em>your mind is for having ideas, not holding them</em></p>
+
 
 <p align="center"><em>We have been writing code word by word, doing one thing at a time like it's 2015 and still have patience. No we don't. We lost it at the beginning of 2026, right around when claude started finishing our sentences better than us</em></p>
 
@@ -21,12 +23,13 @@
 home/
 ├── agents/
 │   ├── capture.py        runs continuously, listens to Telegram
-│   ├── clarify.py        runs every 1 hour, routes capture.md
+│   ├── clarify.py        runs every 5 minutes, routes capture.md
 │   ├── project.py        run manually per project
 │   ├── coffeechat.py     run manually per project for planning
 │   └── evaluation.py     run manually once a week
 ├── tools/
 │   ├── telegram.py
+│   ├── telegram_cli.py
 │   ├── terminal.py
 │   ├── browser.py
 │   └── transcribe.py
@@ -36,7 +39,7 @@ home/
 │   ├── project.md
 │   ├── coffeechat.md
 │   └── evaluation.md
-├── memory/               created at runtime by the agents
+├── memory/               runtime state, created by agents
 │   ├── capture.md
 │   ├── capture/              media files (photos, videos, voice)
 │   ├── nexttodo.md
@@ -56,6 +59,8 @@ home/
 ├── run.sh
 └── config.yaml
 ```
+
+Persistent long-term memory lives in a separate repo: `bismuth-memory/`.
 
 ## Setup
 
