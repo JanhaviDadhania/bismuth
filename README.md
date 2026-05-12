@@ -7,7 +7,7 @@
 
 <p align="center"><em>As you start talking to bismuth, it stores everything it know about you in a diary. In memory/ folder. My Bismuth's memory lives in a separate private repo, and yours should too. You don't want your diary on public repo.</em></p>
 
-<p align="center"><em>Here's what's inside. Don't overthink it — agents do things, tools are how they do things, prompts are what you tell them, memory is what they remember.</em></p>
+<p align="center"><em>Here's what's inside. Don't overthink it. Agents do things, tools are how they do things, prompts are what you tell them, memory is what they remember.</em></p>
 
 ## Structure
 
