@@ -1,15 +1,15 @@
 
-<p align="center"><em>So here's the thing about you(and me). You've been writing code word by word, doing one thing at a time like it's 2015 and you still have patience. You don't. We lost it at the beginning of 2026, right around when claude started finishing your sentences better than you.</em></p>
+<p align="center"><em>We have been writing code word by word, doing one thing at a time like it's 2015 and still have patience. No we don't. We lost it at the beginning of 2026, right around when claude started finishing your sentences better than us</em></p>
 
 <p align="center"><img width="300" height="300" alt="Bismuth" src="./pngegg.png" /></p>
 
-<p align="center"><em>Everybody and their dog is building agents now and we cannot be the ones left behind. But also, we are not going to be boring about it. We can't just be using claude CLI like every other IT engineer in offices. So I stayed up a few nights and made Bismuth. You just fork and setup this repo to have your own bismuth.</em></p>
+<p align="center"><em>Everybody is making their personal agent now. I didn't want to be the one left behind. But I also didn't want it to be another claude+chat. So I stayed up a few nights and made Bismuth. You just fork and setup this repo to have your own bismuth.</em></p>
 
 <p align="center"><em>No it doesn't do your dishes. It's a software agent, calm down. But it does check your calendar and find your next free slot, send emails for you, post on Instagram for you, remember everything you've ever told it, write code, browse the web, and honestly after 5 days it is going to know you schedule better than you do.</em></p>
 
 <p align="center"><em>As you start talking to bismuth, it stores everything it know about you in a diary. In memory/ folder. My Bismuth's memory lives in a separate private repo, and yours should too. You don't want your diary on public repo.</em></p>
 
-<p align="center"><em>And before you ask.. yeah, it actually works. Here's the receipts.</em></p>
+<p align="center"><em>It works. Here's the receipts.</em></p>
 <img width="2109" height="1179" alt="bismuthcareditcard" src="https://github.com/user-attachments/assets/75d7b999-bbcf-4a36-b943-60f0c9c73084" />
 
 <p></p>
