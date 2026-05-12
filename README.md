@@ -7,6 +7,8 @@
 
 <p align="center"><em>As you start talking to bismuth, it stores everything it know about you in a diary. In memory/ folder. My Bismuth's memory lives in a separate private repo, and yours should too. You don't want your diary on public repo.</em></p>
 
+<p align="center"><em>Here's what's inside. Don't overthink it — agents do things, tools are how they do things, prompts are what you tell them, memory is what they remember.</em></p>
+
 ## Structure
 
 ```
@@ -67,6 +69,6 @@ python agents/coffeechat.py <project_name>  # run a coffeechat planning session
 python agents/evaluation.py              # weekly report
 ```
 
-## Bismuth's test score
+<p align="center"><em>And before you ask.. yeah, it actually works. Here's the receipts.</em></p>
 <img width="2109" height="1179" alt="bismuthcareditcard" src="https://github.com/user-attachments/assets/75d7b999-bbcf-4a36-b943-60f0c9c73084" />
 
