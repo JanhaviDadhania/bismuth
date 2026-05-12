@@ -1,21 +1,11 @@
-<p align="center"><em>your mind is for having ideas, not for holding them, not for executing them</em></p>
 
-# bismuth
+<p align="center"><em>So here's the thing about you(and me). You've been writing code word by word, doing one thing at a time like it's 2015 and you still have patience. You don't. We lost it at the beginning of 2026, right around when claude started finishing your sentences better than you.</em></p>
 
-A GTD agentic system. Five agents, four tools, one memory folder.
-# Bismuth
-<img width="300" height="300" alt="image" src="./pngegg.png" />
+<p align="center"><img width="300" height="300" alt="Bismuth" src="./pngegg.png" /></p>
 
-[MEMEX](https://en.wikipedia.org/wiki/Memex) using LLMs.  
+<p align="center"><em>Everybody and their dog is building agents now and we cannot be the ones left behind. But also, we are not gonna be basic about it. We can't just be using claude CLI like every other IT engineer in offices. Our's gotta have taste and some fashion. So I stayed up a few nights and made Bismuth. You just fork and setup this repo to have your own bismuth.</em></p>
 
-Vannevar Bush wrote about concept of memex after world war 2; when a mini mechanical revolution had created very reliable tools.
-Memex is a machine he envisioned that works as an external brain for humans. Memex looks like a big furniture piece, half room size with a desk. The desk has buttons, screens, levers, a typewriter; and the other end of the Memex is a huge storage box. The storage box saves content in microfilm and mechanically processes it. It takes in any number of premises and churns out conclusions. If the user wishes to consult a certain book, he clicks and the book appears before him on one of the screens. There are special buttons to skip to the next chapter, and to skip to the next book.
-
-## Implementation with LLMs
-original memex had two interacting units. brain and storage system.
-i have three. brain, storage and LLM.
-
-This repo is a llm layer. I interacte with this agent, ask it to implement some of my projects which could be done using terminal, code, browser and report back and log the results. At core, this repo is instructions to LLM on how to organise information + code for tools LLM need to use terminal, execute code, use browser.
+<p align="center"><em>As you start talking to bismuth, it stores everything it know about you in a diary. In memory/ folder. My Bismuth's memory lives in a separate private repo, and yours should too. You don't want your diary on public repo.</em></p>
 
 ## Structure
 
@@ -77,6 +67,6 @@ python agents/coffeechat.py <project_name>  # run a coffeechat planning session
 python agents/evaluation.py              # weekly report
 ```
 
-## Bismuth's Stuff
+## Bismuth's test score
 <img width="2109" height="1179" alt="bismuthcareditcard" src="https://github.com/user-attachments/assets/75d7b999-bbcf-4a36-b943-60f0c9c73084" />
 
