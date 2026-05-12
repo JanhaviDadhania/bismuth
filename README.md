@@ -3,7 +3,7 @@
 
 <p align="center"><img width="300" height="300" alt="Bismuth" src="./pngegg.png" /></p>
 
-<p align="center"><em>Everybody and their dog is building agents now and we cannot be the ones left behind. But also, we are not gonna be basic about it. We can't just be using claude CLI like every other IT engineer in offices. Our's gotta have taste. So I stayed up a few nights and made Bismuth. You just fork and setup this repo to have your own bismuth.</em></p>
+<p align="center"><em>Everybody and their dog is building agents now and we cannot be the ones left behind. But also, we are not going to be boring about it. We can't just be using claude CLI like every other IT engineer in offices. So I stayed up a few nights and made Bismuth. You just fork and setup this repo to have your own bismuth.</em></p>
 
 <p align="center"><em>No it doesn't do your dishes. It's a software agent, calm down. But it does check your calendar and find your next free slot, send emails for you, post on Instagram for you, remember everything you've ever told it, write code, browse the web, and honestly after 5 days it is going to know you schedule better than you do.</em></p>
 
