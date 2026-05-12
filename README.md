@@ -1,5 +1,5 @@
 
-<p align="center"><em>We have been writing code word by word, doing one thing at a time like it's 2015 and still have patience. No we don't. We lost it at the beginning of 2026, right around when claude started finishing your sentences better than us</em></p>
+<p align="center"><em>We have been writing code word by word, doing one thing at a time like it's 2015 and still have patience. No we don't. We lost it at the beginning of 2026, right around when claude started finishing our sentences better than us</em></p>
 
 <p align="center"><img width="300" height="300" alt="Bismuth" src="./pngegg.png" /></p>
 
