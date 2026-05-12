@@ -5,6 +5,8 @@
 
 <p align="center"><em>Everybody and their dog is building agents now and we cannot be the ones left behind. But also, we are not gonna be basic about it. We can't just be using claude CLI like every other IT engineer in offices. Our's gotta have taste. So I stayed up a few nights and made Bismuth. You just fork and setup this repo to have your own bismuth.</em></p>
 
+<p align="center"><em>No it doesn't do your dishes. It's a software agent, calm down. But it does check your calendar and find your next free slot, send emails for you, post on Instagram for you, remember everything you've ever told it, write code, browse the web, and honestly at this point it knows your schedule better than you do.</em></p>
+
 <p align="center"><em>As you start talking to bismuth, it stores everything it know about you in a diary. In memory/ folder. My Bismuth's memory lives in a separate private repo, and yours should too. You don't want your diary on public repo.</em></p>
 
 <p align="center"><em>And before you ask.. yeah, it actually works. Here's the receipts.</em></p>
