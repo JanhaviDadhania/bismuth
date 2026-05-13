@@ -16,7 +16,16 @@ export BISMUTH_MEMORY_DIR=$(python3 -c "import yaml, os; c=yaml.safe_load(open('
 # ─────────────────────────────────────────────
 
 echo "Syncing memory from $BISMUTH_MEMORY_DIR..."
-git -C "$BISMUTH_MEMORY_DIR" pull --rebase 2>/dev/null || echo "Memory sync skipped (not a git repo or no remote)"
+if git -C "$BISMUTH_MEMORY_DIR" rev-parse --git-dir >/dev/null 2>&1; then
+  git -C "$BISMUTH_MEMORY_DIR" add -A
+  if ! git -C "$BISMUTH_MEMORY_DIR" diff --cached --quiet; then
+    git -C "$BISMUTH_MEMORY_DIR" commit -m "startup sync"
+  fi
+  git -C "$BISMUTH_MEMORY_DIR" pull --rebase
+  git -C "$BISMUTH_MEMORY_DIR" push
+else
+  echo "Memory sync skipped (not a git repo)"
+fi
 
 # ─────────────────────────────────────────────
 # Spawn agents
@@ -40,9 +49,12 @@ echo "All agents running. Press Ctrl+C to stop."
 
 (while true; do
   sleep 900
-  git -C "$BISMUTH_MEMORY_DIR" add . && \
-    git -C "$BISMUTH_MEMORY_DIR" commit -m "periodic sync" && \
-    git -C "$BISMUTH_MEMORY_DIR" push 2>/dev/null || true
+  git -C "$BISMUTH_MEMORY_DIR" add -A || echo "[memory-sync] add failed"
+  if ! git -C "$BISMUTH_MEMORY_DIR" diff --cached --quiet; then
+    git -C "$BISMUTH_MEMORY_DIR" commit -m "periodic sync" || echo "[memory-sync] commit failed"
+  fi
+  git -C "$BISMUTH_MEMORY_DIR" pull --rebase || echo "[memory-sync] pull --rebase failed — local edits may not reach origin"
+  git -C "$BISMUTH_MEMORY_DIR" push || echo "[memory-sync] push failed — local edits did NOT reach origin"
 done) &
 SYNC_PID=$!
 echo "memory sync started (pid $SYNC_PID)"

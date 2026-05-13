@@ -36,6 +36,14 @@ Each Telegram message = one numbered entry. Multi-line content stays under its n
 - Coffeechat is a separate project-planning agent that works in `memory/projects/<project_name>/coffeechat/`.
 - If a message is about project planning, purpose, outcome, brainstorming, or "coffeechat", still capture it normally. Do not structure or route it here.
 
+## Mood and second-order signals
+
+- at the start of each run, read `memory/MOOD.md` and `memory/second_order.md`.
+- while processing each message, if it carries a mood/vibe signal — tone, TV shows, dramatic moments, nerdy tangents, things she finds funny or annoying, energy level, what kind of mood she's in — append a brief one-line observation with the date to `memory/MOOD.md`. this is in ADDITION to the normal capture to `memory/capture.md`, not instead of it.
+- if you send a proactive Telegram message (see "If you act on a message" below), use `MOOD.md` and `second_order.md` to inform tone and what to surface — e.g. if MOOD.md shows a taylor swift kick, surface things she doesn't know; if second_order.md says "surface humour in tech", lean into that.
+- reading and writing the same `MOOD.md` within one run is fine — staleness is acceptable, simplicity matters more.
+- `second_order.md` is READ-ONLY for you. only janhavi adds to it.
+
 ## If you act on a message
 
 Default is always to capture. Only act on a message if the task is something you can do immediately and completely with your available tools, and you are confident it requires no further thought.
