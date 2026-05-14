@@ -19,6 +19,7 @@ import os
 import re
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from datetime import datetime
@@ -43,7 +44,8 @@ PENDING_TASKS_DIR = HARNESS_DIR / "pending_tasks"
 # ─── Tunables ────────────────────────────────────────────────────────────────
 
 EXECUTOR_CAP = 3
-LONG_POLL_TIMEOUT = 50
+LONG_POLL_TIMEOUT = 50      # seconds — Telegram thread holds the connection this long
+MAIN_TICK = 1.0             # seconds — main loop max idle wait between mailbox/buffer checks
 AGENT_TIMEOUT = 600
 TELEGRAM_API = "https://api.telegram.org/bot{token}/{method}"
 
@@ -121,14 +123,14 @@ def log_event(event_type: str, **kwargs):
 
 # ─── Telegram ────────────────────────────────────────────────────────────────
 
-def telegram_long_poll(offset: int) -> tuple[list[str], int]:
-    """Block until message arrives or timeout. Returns (text messages, new offset)."""
+def _fetch_telegram(offset: int, timeout: int) -> tuple[list[str], int]:
+    """One getUpdates call. Returns (text messages, new offset)."""
     url = TELEGRAM_API.format(token=_tg_token(), method="getUpdates")
     try:
         resp = requests.get(
             url,
-            params={"offset": offset, "timeout": LONG_POLL_TIMEOUT},
-            timeout=LONG_POLL_TIMEOUT + 10,
+            params={"offset": offset, "timeout": timeout},
+            timeout=timeout + 10,
         )
         data = resp.json()
         if not data.get("ok"):
@@ -158,6 +160,46 @@ def telegram_send(text: str):
         requests.post(url, data={"chat_id": _tg_chat_id(), "text": text}, timeout=15)
     except Exception as e:
         log_event("telegram_send_error", error=str(e))
+
+
+# ─── Telegram background thread ──────────────────────────────────────────────
+
+class TelegramPoller(threading.Thread):
+    """
+    Background thread that long-polls Telegram and deposits messages into a
+    shared inbox. Wakes the main loop via tg_event so the new agent runs
+    immediately instead of waiting for the next long-poll cycle to expire.
+    """
+
+    def __init__(self, initial_offset: int):
+        super().__init__(daemon=True, name="telegram-poller")
+        self.offset = initial_offset
+        self.inbox: list[str] = []
+        self.lock = threading.Lock()
+        self.event = threading.Event()
+        self.shutdown = threading.Event()
+
+    def run(self):
+        while not self.shutdown.is_set():
+            with self.lock:
+                offset = self.offset
+            messages, new_offset = _fetch_telegram(offset, LONG_POLL_TIMEOUT)
+            with self.lock:
+                self.offset = new_offset
+                if messages:
+                    self.inbox.extend(messages)
+            if messages:
+                self.event.set()
+
+    def drain(self) -> tuple[list[str], int]:
+        """Atomically take all queued messages + current offset."""
+        with self.lock:
+            messages = self.inbox[:]
+            self.inbox.clear()
+            return messages, self.offset
+
+    def stop(self):
+        self.shutdown.set()
 
 
 # ─── Mailbox ─────────────────────────────────────────────────────────────────
@@ -393,35 +435,47 @@ def main():
     state = read_state()
     log_event("harness_start", active_agent=state["active_agent"])
 
-    while True:
-        try:
-            messages, new_offset = telegram_long_poll(state["telegram_offset"])
-            state["telegram_offset"] = new_offset
+    poller = TelegramPoller(initial_offset=state["telegram_offset"])
+    poller.start()
 
-            reap_executors(state)
-            synthetic = read_mailbox(state)
+    try:
+        while True:
+            try:
+                # Wait for *any* wake source: telegram message or MAIN_TICK timeout.
+                # Timeout still lets us periodically check mailbox + pending buffer
+                # even when no telegram message arrives.
+                poller.event.wait(timeout=MAIN_TICK)
+                poller.event.clear()
 
-            buffer = state.get("pending_buffer", [])
-            batch = buffer + synthetic + messages
-            state["pending_buffer"] = []
+                messages, current_offset = poller.drain()
+                state["telegram_offset"] = current_offset
 
-            if not batch:
+                reap_executors(state)
+                synthetic = read_mailbox(state)
+
+                buffer = state.get("pending_buffer", [])
+                batch = buffer + synthetic + messages
+                state["pending_buffer"] = []
+
+                if not batch:
+                    write_state(state)
+                    continue
+
+                stdout, _ = run_agent(state["active_agent"], batch)
+                tokens = parse_tokens(stdout)
+                handle_tokens(tokens, state)
+
                 write_state(state)
-                continue
 
-            stdout, _ = run_agent(state["active_agent"], batch)
-            tokens = parse_tokens(stdout)
-            handle_tokens(tokens, state)
-
-            write_state(state)
-
-        except KeyboardInterrupt:
-            log_event("harness_stop", reason="keyboard")
-            print("\nHarness stopped.")
-            break
-        except Exception as e:
-            log_event("loop_error", error=str(e))
-            time.sleep(5)
+            except KeyboardInterrupt:
+                raise
+            except Exception as e:
+                log_event("loop_error", error=str(e))
+                time.sleep(5)
+    except KeyboardInterrupt:
+        log_event("harness_stop", reason="keyboard")
+        print("\nHarness stopped.")
+        poller.stop()
 
 
 if __name__ == "__main__":
