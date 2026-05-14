@@ -30,18 +30,15 @@ The **harness** owns Telegram polling, agent switching, executor lifecycle, and 
 ```
 home/
 ├── harness.py            the always-on orchestrator
-├── agents/
-│   └── evaluation.py     weekly evaluation (independent of harness)
 ├── prompts/
 │   ├── assistant.md
 │   ├── coffeechat.md
 │   ├── executor.md
-│   └── evaluation.md
+│   └── evaluation.md     loaded manually in CLI for weekly eval
 ├── tools/
-│   ├── telegram_cli.py
+│   ├── telegram_cli.py   send-only Telegram CLI used by agents
 │   ├── terminal.py
-│   ├── browser.py
-│   └── transcribe.py
+│   └── transcribe.py     voice → text (faster-whisper)
 ├── run.sh                starts harness + memory git-sync loop
 └── config.yaml           env vars + memory_path
 ```
@@ -82,7 +79,18 @@ Design docs: `docs/v2/V2_PLAN.md`, `docs/v2/HARNESS_DESIGN.md`, `docs/v2/MEMORY_
 
 ```bash
 ./run.sh                                # starts harness + memory git-sync loop
-python agents/evaluation.py             # weekly report (manual)
 ```
 
 The harness listens on Telegram. Talk to it; it routes, replies, switches to coffeechat when asked, and spawns executors when work needs doing.
+
+### Weekly evaluation
+
+Run manually, once a week, in Claude CLI:
+
+```bash
+cd ~/bismuth-memory
+claude
+# then in Claude: "read ~/bismuth/prompts/evaluation.md and follow those instructions"
+```
+
+The evaluation agent reads `evaluation_focus.md` (which it edits itself over time as you express what to track), looks at the past week of `tracking.md` / `mood.md` / `reminders.md` / nexttodos, and runs a short conversation. Session summary lands in `~/bismuth-memory/evaluation/<date>.md`.
