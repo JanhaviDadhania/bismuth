@@ -39,6 +39,8 @@ STATE_BACKUP = HARNESS_DIR / ".state.json.bak"
 STATE_TMP = HARNESS_DIR / ".state.json.tmp"
 LOG_FILE = HARNESS_DIR / "log.jsonl"
 PENDING_TASKS_DIR = HARNESS_DIR / "pending_tasks"
+INBOX_DIR = HARNESS_DIR / "inbox"
+INBOX_PRUNE_AGE_DAYS = 7
 
 
 # ─── Tunables ────────────────────────────────────────────────────────────────
@@ -89,6 +91,19 @@ def default_state() -> dict:
 def init_dirs():
     HARNESS_DIR.mkdir(parents=True, exist_ok=True)
     PENDING_TASKS_DIR.mkdir(parents=True, exist_ok=True)
+    INBOX_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def prune_inbox():
+    """Delete inbox files older than INBOX_PRUNE_AGE_DAYS."""
+    cutoff = time.time() - (INBOX_PRUNE_AGE_DAYS * 86400)
+    for f in INBOX_DIR.iterdir():
+        try:
+            if f.is_file() and f.stat().st_mtime < cutoff:
+                f.unlink()
+                log_event("inbox_pruned", file=f.name)
+        except Exception:
+            pass
 
 
 def read_state() -> dict:
@@ -125,8 +140,127 @@ def log_event(event_type: str, **kwargs):
 
 # ─── Telegram ────────────────────────────────────────────────────────────────
 
+def _telegram_get_file_url(file_id: str) -> str | None:
+    """Resolve file_id to a downloadable URL."""
+    url = TELEGRAM_API.format(token=_tg_token(), method="getFile")
+    try:
+        resp = requests.get(url, params={"file_id": file_id}, timeout=15)
+        data = resp.json()
+        if not data.get("ok"):
+            return None
+        file_path = data["result"]["file_path"]
+        return f"https://api.telegram.org/file/bot{_tg_token()}/{file_path}"
+    except Exception as e:
+        log_event("telegram_getfile_error", error=str(e), file_id=file_id)
+        return None
+
+
+def _download_telegram_file(file_id: str, dest: Path) -> bool:
+    file_url = _telegram_get_file_url(file_id)
+    if not file_url:
+        return False
+    try:
+        resp = requests.get(file_url, timeout=60)
+        resp.raise_for_status()
+        dest.write_bytes(resp.content)
+        return True
+    except Exception as e:
+        log_event("telegram_download_error", error=str(e), file_id=file_id)
+        return False
+
+
+def _transcribe_audio(path: Path) -> str | None:
+    """Voice/audio → text via tools/transcribe.py. Returns None on failure."""
+    try:
+        from tools.transcribe import transcribe
+        result = transcribe(str(path))
+        if result.get("success"):
+            return result.get("transcript", "").strip()
+        log_event("transcribe_failed", error=result.get("error"), path=str(path))
+        return None
+    except Exception as e:
+        log_event("transcribe_exception", error=str(e), path=str(path))
+        return None
+
+
+def _render_message(msg: dict, is_edited: bool = False) -> str | None:
+    """
+    Convert one Telegram message into a single synthetic string for the agent.
+    Downloads media to INBOX_DIR. Transcribes voice/audio. Returns None for
+    fully unsupported types.
+    """
+    msg_id = msg.get("message_id", "x")
+    caption = msg.get("caption", "").strip()
+    edit_prefix = "[edited] " if is_edited else ""
+
+    if "text" in msg:
+        return edit_prefix + msg["text"]
+
+    if "voice" in msg:
+        file_id = msg["voice"]["file_id"]
+        dest = INBOX_DIR / f"voice_{msg_id}.ogg"
+        if _download_telegram_file(file_id, dest):
+            transcript = _transcribe_audio(dest)
+            if transcript:
+                return f"{edit_prefix}[telegram voice — saved at {dest}]: {transcript}"
+            return f"{edit_prefix}[telegram voice — saved at {dest}, transcription failed]"
+        return f"{edit_prefix}[telegram voice — download failed]"
+
+    if "audio" in msg:
+        file_id = msg["audio"]["file_id"]
+        ext = (msg["audio"].get("mime_type", "audio/mp3").split("/")[-1] or "mp3")
+        dest = INBOX_DIR / f"audio_{msg_id}.{ext}"
+        if _download_telegram_file(file_id, dest):
+            transcript = _transcribe_audio(dest)
+            if transcript:
+                base = f"{edit_prefix}[telegram audio — saved at {dest}]: {transcript}"
+                return base + (f" | caption: {caption}" if caption else "")
+            return f"{edit_prefix}[telegram audio — saved at {dest}, transcription failed]" + (
+                f" | caption: {caption}" if caption else "")
+        return f"{edit_prefix}[telegram audio — download failed]"
+
+    if "photo" in msg:
+        # photo is an array of sizes; take the largest (last)
+        photo = msg["photo"][-1]
+        file_id = photo["file_id"]
+        dest = INBOX_DIR / f"photo_{msg_id}.jpg"
+        if _download_telegram_file(file_id, dest):
+            base = f"{edit_prefix}[telegram photo — saved at {dest}]"
+            return base + (f" caption: {caption}" if caption else "")
+        return f"{edit_prefix}[telegram photo — download failed]"
+
+    if "video" in msg:
+        file_id = msg["video"]["file_id"]
+        dest = INBOX_DIR / f"video_{msg_id}.mp4"
+        if _download_telegram_file(file_id, dest):
+            base = f"{edit_prefix}[telegram video — saved at {dest}]"
+            return base + (f" caption: {caption}" if caption else "")
+        return f"{edit_prefix}[telegram video — download failed]"
+
+    if "document" in msg:
+        doc = msg["document"]
+        file_id = doc["file_id"]
+        filename = doc.get("file_name", f"doc_{msg_id}")
+        # sanitize
+        safe_name = "".join(c if c.isalnum() or c in "._- " else "_" for c in filename)
+        dest = INBOX_DIR / f"doc_{msg_id}_{safe_name}"
+        if _download_telegram_file(file_id, dest):
+            base = f"{edit_prefix}[telegram document {filename} — saved at {dest}]"
+            return base + (f" caption: {caption}" if caption else "")
+        return f"{edit_prefix}[telegram document {filename} — download failed]"
+
+    # Unsupported types: sticker, location, contact, poll, etc.
+    for unsupported in ("sticker", "location", "contact", "poll", "venue", "animation"):
+        if unsupported in msg:
+            log_event("unsupported_telegram_type", type=unsupported, msg_id=msg_id)
+            return f"{edit_prefix}[telegram {unsupported} — cannot process; tell janhavi you can't handle this type]"
+
+    log_event("unknown_telegram_message", msg_id=msg_id, keys=list(msg.keys()))
+    return None
+
+
 def _fetch_telegram(offset: int, timeout: int) -> tuple[list[str], int]:
-    """One getUpdates call. Returns (text messages, new offset)."""
+    """One getUpdates call. Returns (rendered messages, new offset)."""
     url = TELEGRAM_API.format(token=_tg_token(), method="getUpdates")
     try:
         resp = requests.get(
@@ -141,16 +275,19 @@ def _fetch_telegram(offset: int, timeout: int) -> tuple[list[str], int]:
         if not updates:
             return [], offset
         new_offset = updates[-1]["update_id"] + 1
-        texts = []
+        rendered = []
         for u in updates:
-            msg = u.get("message") or u.get("edited_message")
-            if not msg:
+            msg = u.get("message")
+            edited = u.get("edited_message")
+            if msg:
+                line = _render_message(msg, is_edited=False)
+            elif edited:
+                line = _render_message(edited, is_edited=True)
+            else:
                 continue
-            if "text" in msg:
-                texts.append(msg["text"])
-            elif "caption" in msg:
-                texts.append(msg["caption"])
-        return texts, new_offset
+            if line:
+                rendered.append(line)
+        return rendered, new_offset
     except Exception as e:
         log_event("telegram_error", error=str(e))
         return [], offset
@@ -452,6 +589,7 @@ def handle_tokens(tokens: dict, state: dict):
 def main():
     _load_env()
     init_dirs()
+    prune_inbox()
     state = read_state()
     log_event("harness_start", active_agent=state["active_agent"])
 

@@ -199,14 +199,34 @@ Omit `PENDING:` if nothing to hand over.
 
 ---
 
-## 5. Executor + calendar synthetic messages
+## 5. Synthetic messages
 
-These arrive at the top of your batch tagged.
+These arrive in your batch tagged with `[...]` prefixes. Each tag tells you what the message represents and how to handle it.
+
+### From executors
 
 - `[executor #abc for <project>]: <question>` — the synthetic message includes a line `To answer, write your reply to: <path-to-answer.txt>`. Decide: answer directly if you have the context (and write your answer to that path with the Write tool), or relay the question to janhavi via Telegram and write *her* reply to that path when it arrives.
 - `[executor #abc for <project>]: DONE — <summary>` — tell janhavi.
 - `[executor #abc for <project>]: FAILED — ...` — tell janhavi; check stderr if asked.
-- `[calendar] <title> @ <time> — <description>` — phrase in your voice, send to Telegram.
+
+### From the harness (system events)
+
+- `[daily reminders] ...` — handle as described in section 3a.
+
+### From Telegram (non-text messages)
+
+The harness pre-processes voice, photo, video, document, etc., and presents them as synthetic strings. Files land in `{MEMORY_DIR}/.harness/inbox/` (ephemeral; harness prunes after 7 days). Your job is to (a) process the content and (b) decide whether to move the file to a permanent home or let it expire.
+
+- `[edited] <new text>` — janhavi edited a prior message. Try to update the file you wrote earlier rather than appending a duplicate. If you can't tell what to update, treat as a new message and note the edit context.
+- `[telegram voice — saved at <path>]: <transcript>` — treat the transcript exactly like a text message and route accordingly. **Default: delete the .ogg file** after processing (you've got the transcript; the audio is redundant). **Exception**: if janhavi explicitly says in the same batch or a follow-up "don't transcribe", "save the song", "keep the audio", etc., move the file from inbox to a sensible home (e.g. `reference/`) and skip the transcript routing.
+- `[telegram audio — saved at <path>]: <transcript>` — same as voice.
+- `[telegram photo — saved at <path>] caption: <text>` — process the caption like normal text. **Decide what to do with the photo**: if it's clearly reference material (a paper screenshot, a meme she'll want again, a profile pic candidate), move it from inbox to the right folder (e.g. `reference/`, project `reference/`). Otherwise let it expire. Update the relevant `register.md` if you move it.
+- `[telegram photo — saved at <path>]` (no caption) — file lives in inbox. Don't auto-describe. If janhavi follows up with context about it, then decide where it belongs. Until then, leave it.
+- `[telegram video — saved at <path>] caption: ...` — same idea as photo; move if it's worth keeping.
+- `[telegram document <filename> — saved at <path>] caption: ...` — likely reference material; default to moving into `reference/` (or the most relevant project's `reference/`) and updating `register.md`. Read the document if you need its content.
+- `[telegram <sticker|location|contact|poll|...> — cannot process; tell janhavi ...]` — send janhavi a brief Telegram reply explaining you can't process this type, and skip.
+- `[telegram <type> — download failed]` — send janhavi a Telegram apology and ask her to resend.
+- `[telegram <type> — saved at <path>, transcription failed]` — file is in inbox; tell janhavi transcription failed; offer to retry or treat as opaque file.
 
 ---
 
