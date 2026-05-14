@@ -22,7 +22,7 @@ import sys
 import threading
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, time as dtime
 from pathlib import Path
 
 import requests
@@ -47,6 +47,7 @@ EXECUTOR_CAP = 3
 LONG_POLL_TIMEOUT = 50      # seconds — Telegram thread holds the connection this long
 MAIN_TICK = 1.0             # seconds — main loop max idle wait between mailbox/buffer checks
 AGENT_TIMEOUT = 600
+REMINDER_TIME = dtime(9, 0)  # daily nudge fires at or after this local time, once per day
 TELEGRAM_API = "https://api.telegram.org/bot{token}/{method}"
 
 
@@ -81,6 +82,7 @@ def default_state() -> dict:
         "telegram_offset": 0,
         "executors": {},
         "pending_buffer": [],
+        "last_reminder_check": "",
     }
 
 
@@ -200,6 +202,24 @@ class TelegramPoller(threading.Thread):
 
     def stop(self):
         self.shutdown.set()
+
+
+# ─── Daily reminder nudge ────────────────────────────────────────────────────
+
+def check_daily_reminder(state: dict) -> list[str]:
+    """Inject a synthetic [daily reminders] message once per day at or after REMINDER_TIME."""
+    now = datetime.now()
+    today = now.strftime("%Y-%m-%d")
+    if state.get("last_reminder_check") == today:
+        return []
+    if now.time() < REMINDER_TIME:
+        return []
+    state["last_reminder_check"] = today
+    log_event("daily_reminder_fired", date=today)
+    return [
+        "[daily reminders] read reminders.md, surface anything due today or coming up, "
+        "and handle any LAST OF SERIES entries."
+    ]
 
 
 # ─── Mailbox ─────────────────────────────────────────────────────────────────
@@ -452,6 +472,7 @@ def main():
 
                 reap_executors(state)
                 synthetic = read_mailbox(state)
+                synthetic += check_daily_reminder(state)
 
                 buffer = state.get("pending_buffer", [])
                 batch = buffer + synthetic + messages

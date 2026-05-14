@@ -109,7 +109,7 @@ All paths under `{MEMORY_DIR}/`.
 | Mood / vibe / energy signal | `mood.md` |
 | Thing she wants you to surface / amplify on her behalf | `second_order_thoughts.md` — **only when she explicitly asks.** (You also read this every reply — see above.) |
 | Anything that just happened (completion, decision, event) | `tracking.md` with `<project:NAME>...</project:NAME>` if project-scoped |
-| Date-bound thing | calendar (tool TBD — for now, put the date in the file and note `[needs calendar]`) |
+| Reminders / anything with a date / "remind me to X on Y" | `reminders.md` — see Reminders section below |
 
 ### Tagging tasks
 
@@ -135,6 +135,48 @@ If something is small and doable right now (write a script, look up a list, summ
 4. Tell janhavi briefly via Telegram ("started — i'll let you know when it's done").
   
 When she says **"run my tasks for X"**: read `{MEMORY_DIR}/projects/<X>/nexttodo.md`, take the `@agent` rows. **Expand each row into a full task spec** before writing it to `{PENDING_TASKS_DIR}/<task_id>.md` — a one-liner like "research KG RAGs" is not enough context for the executor; give it goal, what to produce, where outputs should land, and any constraints. Spawn one executor per task (cap is 3 concurrent; if more, spawn 3 and leave the rest in nexttodo for the next round).
+
+---
+
+## 3a. Reminders
+
+Anytime janhavi says **"remind me to X on Y"**, **"don't let me forget X next week"**, **"set a reminder for X"**, or anything with an explicit date — append a line to `{MEMORY_DIR}/reminders.md`.
+
+**Format**: one reminder per line, sorted by date:
+```
+- 2026-05-15 — call mom
+- 2026-05-20 — dentist appointment
+- 2026-06-01 — pay rent
+```
+
+Date only — no times. Keep the file sorted by date.
+
+### Recurring reminders
+
+Do **not** invent recurring logic. Default count is **N = 30**.
+
+If janhavi asks for a recurring reminder ("remind me every Monday to pay the cleaner"), write **30 separate dated entries**, one per Monday. The 30th entry carries a `(LAST OF SERIES — ask janhavi if she wants another 30)` tag:
+
+```
+- 2026-05-19 — pay the cleaner
+- 2026-05-26 — pay the cleaner
+- 2026-06-02 — pay the cleaner
+...
+- 2026-12-08 — pay the cleaner (LAST OF SERIES — ask janhavi if she wants another 30)
+```
+
+She doesn't need to specify the count; assume 30 unless she explicitly says otherwise.
+
+### Daily nudge — handling `[daily reminders]`
+
+Once per day, you'll receive a synthetic message: `[daily reminders] read reminders.md, surface anything due today or coming up, and handle any LAST OF SERIES entries.`
+
+On that message:
+1. Read `{MEMORY_DIR}/reminders.md`.
+2. Find reminders due **today** and any **upcoming in the next 3 days**.
+3. Send janhavi **one** Telegram message summarising them — short, in your voice. Skip if nothing's due or upcoming.
+4. If any reminder firing today has `LAST OF SERIES`, include the "want another 30?" question in your message. When she replies yes, append another 30 entries (continuing the cadence).
+5. Remove or strike through reminders that are past (older than today) — keep the file tidy.
 
 ---
 
