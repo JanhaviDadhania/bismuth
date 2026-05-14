@@ -16,23 +16,16 @@ export BISMUTH_MEMORY_DIR=$(python3 -c "import yaml, os; c=yaml.safe_load(open('
 # ─────────────────────────────────────────────
 
 echo "Syncing memory from $BISMUTH_MEMORY_DIR..."
-git -C "$BISMUTH_MEMORY_DIR" pull --rebase 2>/dev/null || echo "Memory sync skipped (not a git repo or no remote)"
-
-# ─────────────────────────────────────────────
-# Spawn agents
-# ─────────────────────────────────────────────
-
-echo "Starting bismuth..."
-
-python3 "$DIR/agents/capture.py" &
-CAPTURE_PID=$!
-echo "capture started (pid $CAPTURE_PID)"
-
-python3 "$DIR/agents/clarify.py" &
-CLARIFY_PID=$!
-echo "clarify started (pid $CLARIFY_PID)"
-
-echo "All agents running. Press Ctrl+C to stop."
+if git -C "$BISMUTH_MEMORY_DIR" rev-parse --git-dir >/dev/null 2>&1; then
+  git -C "$BISMUTH_MEMORY_DIR" add -A
+  if ! git -C "$BISMUTH_MEMORY_DIR" diff --cached --quiet; then
+    git -C "$BISMUTH_MEMORY_DIR" commit -m "startup sync"
+  fi
+  git -C "$BISMUTH_MEMORY_DIR" pull --rebase
+  git -C "$BISMUTH_MEMORY_DIR" push
+else
+  echo "Memory sync skipped (not a git repo)"
+fi
 
 # ─────────────────────────────────────────────
 # Periodic memory sync (every 15 minutes)
@@ -40,9 +33,12 @@ echo "All agents running. Press Ctrl+C to stop."
 
 (while true; do
   sleep 900
-  git -C "$BISMUTH_MEMORY_DIR" add . && \
-    git -C "$BISMUTH_MEMORY_DIR" commit -m "periodic sync" && \
-    git -C "$BISMUTH_MEMORY_DIR" push 2>/dev/null || true
+  git -C "$BISMUTH_MEMORY_DIR" add -A || echo "[memory-sync] add failed"
+  if ! git -C "$BISMUTH_MEMORY_DIR" diff --cached --quiet; then
+    git -C "$BISMUTH_MEMORY_DIR" commit -m "periodic sync" || echo "[memory-sync] commit failed"
+  fi
+  git -C "$BISMUTH_MEMORY_DIR" pull --rebase || echo "[memory-sync] pull --rebase failed — local edits may not reach origin"
+  git -C "$BISMUTH_MEMORY_DIR" push || echo "[memory-sync] push failed — local edits did NOT reach origin"
 done) &
 SYNC_PID=$!
 echo "memory sync started (pid $SYNC_PID)"
@@ -51,6 +47,11 @@ echo "memory sync started (pid $SYNC_PID)"
 # Shutdown on Ctrl+C
 # ─────────────────────────────────────────────
 
-trap "echo 'Stopping...'; kill $CAPTURE_PID $CLARIFY_PID $SYNC_PID 2>/dev/null; exit 0" SIGINT SIGTERM
+trap "echo 'Stopping...'; kill $SYNC_PID 2>/dev/null; exit 0" SIGINT SIGTERM
 
-wait
+# ─────────────────────────────────────────────
+# Run harness (foreground; Ctrl+C stops both this and the sync loop)
+# ─────────────────────────────────────────────
+
+echo "Starting bismuth harness..."
+python3 "$DIR/harness.py"

@@ -17,65 +17,80 @@
 <p></p>
 <p align="center"><em>Here's what's inside. Don't overthink it. Agents do things, tools are how they do things, prompts are what you tell them, memory is what they remember.</em></p>
 
-## Structure
+## Architecture (v2)
+
+Three agents driven by one long-running harness:
+
+- **Assistant** — always-on. Reads every Telegram message, routes to memory, captures mood, replies in your voice. Default agent.
+- **Coffeechat** — thinking partner per project. Invoked when you signal you want to think/brainstorm. Hands back to assistant when done.
+- **Executor** — does the actual work. Spawned per task, runs in the background (up to 3 concurrent). Writes outputs into memory, asks via mailbox files when stuck.
+
+The **harness** owns Telegram polling, agent switching, executor lifecycle, and state persistence. Agents are stateless `claude -p` subprocesses; everything they remember lives on disk.
 
 ```
 home/
-├── agents/
-│   ├── capture.py        runs continuously, listens to Telegram
-│   ├── clarify.py        runs every 5 minutes, routes capture.md
-│   ├── project.py        run manually per project
-│   ├── coffeechat.py     run manually per project for planning
-│   └── evaluation.py     run manually once a week
-├── tools/
-│   ├── telegram.py
-│   ├── telegram_cli.py
-│   ├── terminal.py
-│   ├── browser.py
-│   └── transcribe.py
+├── harness.py            the always-on orchestrator
 ├── prompts/
-│   ├── capture.md
-│   ├── clarify.md
-│   ├── project.md
+│   ├── assistant.md
 │   ├── coffeechat.md
-│   └── evaluation.md
-├── memory/               runtime state, created by agents
-│   ├── capture.md
-│   ├── capture/              media files (photos, videos, voice)
-│   ├── nexttodo.md
-│   ├── delegate.md
-│   ├── deferred-todo.md
-│   ├── calendar.md
-│   ├── tracking.md
-│   ├── reference/
-│   │   └── register.md
-│   ├── project_1_name/
-│   │   ├── vision.md
-│   │   ├── nexttodo.md
-│   │   ├── tracking.md
-│   │   └── support/
-│   ├── project_2_name/
-│   └── ... other projects
-├── run.sh
-└── config.yaml
+│   ├── executor.md
+│   └── evaluation.md     loaded manually in CLI for weekly eval
+├── tools/
+│   ├── telegram_cli.py   send-only Telegram CLI used by agents
+│   ├── terminal.py
+│   └── transcribe.py     voice → text (faster-whisper)
+├── run.sh                starts harness + memory git-sync loop
+└── config.yaml           env vars + memory_path
 ```
 
-Persistent long-term memory lives in a separate repo: `bismuth-memory/`.
+Memory lives in a separate private repo at `~/bismuth-memory/`:
+
+```
+bismuth-memory/
+├── nexttodo.md           tagged @janhavi or @agent
+├── someday-maybe.md
+├── to_read.md
+├── mood.md
+├── second_order_thoughts.md
+├── tracking.md           global, with <project:NAME> tags
+├── checklists.md
+├── reference/
+└── projects/<name>/
+    ├── vision.md
+    ├── nexttodo.md
+    ├── reference/
+    └── coffeechat/       (optional session state)
+```
+
+Runtime scratch (state, executor mailboxes, logs) lives under `~/bismuth-memory/.harness/`.
+
+Design docs: `docs/v2/V2_PLAN.md`, `docs/v2/HARNESS_DESIGN.md`, `docs/v2/MEMORY_RESTRUCTURE_STEPS.md`. Smoke test corpus: `TESTS.md`.
 
 ## Setup
 
-1. Install app dependencies: `brew bundle` (installs Pulsar)
+1. Install app dependencies: `brew bundle`
 2. Install Python dependencies: `pip install anthropic faster-whisper requests pyyaml`
 3. Install browser: `npm install -g silicon-browser && silicon-browser install`
 4. Log in to sites once: `silicon-browser --profile silicon open <url>`
-5. Fill in `config.yaml` — add `ANTHROPIC_API_KEY`
-6. Create `memory/<project>/vision.md` for each project
+5. Fill in `config.yaml` — add `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`. `ANTHROPIC_API_KEY` is optional if `claude login` has been run.
+6. Create `memory/<project>/vision.md` for each project.
 
 ## Running
 
 ```bash
-./run.sh                                  # starts capture + clarify
-python agents/project.py <project_name>   # run a project agent
-python agents/coffeechat.py <project_name>  # run a coffeechat planning session
-python agents/evaluation.py              # weekly report
+./run.sh                                # starts harness + memory git-sync loop
 ```
+
+The harness listens on Telegram. Talk to it; it routes, replies, switches to coffeechat when asked, and spawns executors when work needs doing.
+
+### Weekly evaluation
+
+Run manually, once a week, in Claude CLI:
+
+```bash
+cd ~/bismuth-memory
+claude
+# then in Claude: "read ~/bismuth/prompts/evaluation.md and follow those instructions"
+```
+
+The evaluation agent reads `evaluation_focus.md` (which it edits itself over time as you express what to track), looks at the past week of `tracking.md` / `mood.md` / `reminders.md` / nexttodos, and runs a short conversation. Session summary lands in `~/bismuth-memory/evaluation/<date>.md`.
