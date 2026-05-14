@@ -142,6 +142,102 @@ Since `tools/calendar.py` isn't built, simulate by appending directly to a synth
 
 ---
 
+# Reminders tests
+
+These exercise the new `reminders.md` file + daily nudge mechanism. No calendar tool; date is the only field. Default recurring count is **30**.
+
+## R1 — Simple single reminder
+
+**Send:**
+> remind me to refactor the harness on june 1
+
+**Expect:**
+- `~/bismuth-memory/reminders.md` gets a new line: `- 2026-06-01 — refactor the harness`
+- File stays sorted by date.
+- Brief Telegram acknowledgement (or silence, both OK).
+- No exit tokens.
+
+**Verify:**
+```
+grep "2026-06-01" ~/bismuth-memory/reminders.md
+```
+
+---
+
+## R2 — Recurring reminder (default N=30)
+
+**Send:**
+> remind me every monday to do the expense report
+
+**Expect:**
+- 30 separate dated entries in `reminders.md`, one per Monday starting from the next upcoming Monday.
+- All entries: `- YYYY-MM-DD — do the expense report`
+- The 30th entry has `(LAST OF SERIES — ask janhavi if she wants another 30)` appended.
+- File is still sorted by date.
+
+**Verify:**
+```
+grep -c "do the expense report" ~/bismuth-memory/reminders.md   # should be 30
+grep "LAST OF SERIES" ~/bismuth-memory/reminders.md
+```
+
+---
+
+## R3 — Daily nudge fires
+
+This tests that the harness injects `[daily reminders]` once per day at/after 09:00 and the assistant responds with a Telegram summary.
+
+**Setup**: Make sure `state.last_reminder_check` is empty or yesterday's date so the nudge fires on next tick.
+
+**Trigger**: Restart the harness (current time is well past 09:00, so it'll fire immediately on first tick).
+
+**Expect:**
+- `log.jsonl` shows `daily_reminder_fired` event with today's date.
+- `state.last_reminder_check` advances to today.
+- Assistant gets a batch with `[daily reminders] ...` synthetic at the top.
+- Assistant sends **one** Telegram message summarising reminders due today + next 3 days.
+- If nothing is due/upcoming, assistant may skip sending (file says "skip if nothing").
+- Past-dated entries get pruned from `reminders.md`.
+
+**Verify:**
+```
+grep "daily_reminder_fired" ~/bismuth-memory/.harness/log.jsonl
+cat ~/bismuth-memory/.harness/state.json | grep last_reminder_check
+```
+
+---
+
+## R4 — LAST OF SERIES handling
+
+**Setup**: Manually append a line to `~/bismuth-memory/reminders.md` with today's date and the LAST OF SERIES tag:
+```
+- 2026-05-14 — review the model (LAST OF SERIES — ask janhavi if she wants another 30)
+```
+
+**Trigger**: Force a daily nudge (set `state.last_reminder_check` to yesterday and wait for next tick).
+
+**Expect:**
+- Assistant's Telegram summary includes "review the model" with the "want another 30?" question.
+- When you reply "yes", assistant appends 30 more weekly entries with the new 30th carrying LAST OF SERIES again.
+
+---
+
+## R5 — Pruning past entries
+
+**Setup**: Add a few past-dated reminders to `reminders.md`:
+```
+- 2026-05-10 — old thing 1
+- 2026-05-11 — old thing 2
+```
+
+**Trigger**: Daily nudge fires.
+
+**Expect:**
+- After the nudge turn completes, the past entries are gone from `reminders.md`.
+- Today's and future entries are preserved.
+
+---
+
 ## Quick verification commands
 
 ```bash
