@@ -28,22 +28,6 @@ else
 fi
 
 # ─────────────────────────────────────────────
-# Spawn agents
-# ─────────────────────────────────────────────
-
-echo "Starting bismuth..."
-
-python3 "$DIR/agents/capture.py" &
-CAPTURE_PID=$!
-echo "capture started (pid $CAPTURE_PID)"
-
-python3 "$DIR/agents/clarify.py" &
-CLARIFY_PID=$!
-echo "clarify started (pid $CLARIFY_PID)"
-
-echo "All agents running. Press Ctrl+C to stop."
-
-# ─────────────────────────────────────────────
 # Periodic memory sync (every 15 minutes)
 # ─────────────────────────────────────────────
 
@@ -63,6 +47,11 @@ echo "memory sync started (pid $SYNC_PID)"
 # Shutdown on Ctrl+C
 # ─────────────────────────────────────────────
 
-trap "echo 'Stopping...'; kill $CAPTURE_PID $CLARIFY_PID $SYNC_PID 2>/dev/null; exit 0" SIGINT SIGTERM
+trap "echo 'Stopping...'; kill $SYNC_PID 2>/dev/null; exit 0" SIGINT SIGTERM
 
-wait
+# ─────────────────────────────────────────────
+# Run harness (foreground; Ctrl+C stops both this and the sync loop)
+# ─────────────────────────────────────────────
+
+echo "Starting bismuth harness..."
+python3 "$DIR/harness.py"
