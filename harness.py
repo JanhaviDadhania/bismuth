@@ -9,7 +9,7 @@ Owns:
   - State persistence (memory/.harness/state.json)
   - Calendar polling stub (1-hour timer; calendar tool TBD)
 
-Design doc: HARNESS_DESIGN.md
+Design doc: docs/v2/HARNESS_DESIGN.md
 """
 
 from __future__ import annotations
@@ -579,6 +579,10 @@ def handle_tokens(tokens: dict, state: dict):
         spec = tokens["SWITCH"]
         if spec == "assistant" or spec.startswith("coffeechat:"):
             state["active_agent"] = spec
+            # Cold switch: nothing for the new agent to chew on. Inject a small
+            # synthetic so it runs once and greets janhavi.
+            if not state.get("pending_buffer"):
+                state["pending_buffer"] = ["[fresh switch — greet janhavi briefly and warmly]"]
             log_event("switch", to=spec)
         else:
             log_event("unknown_switch", spec=spec)

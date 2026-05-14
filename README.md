@@ -38,7 +38,6 @@ home/
 │   ├── executor.md
 │   └── evaluation.md
 ├── tools/
-│   ├── telegram.py
 │   ├── telegram_cli.py
 │   ├── terminal.py
 │   ├── browser.py
@@ -68,7 +67,7 @@ bismuth-memory/
 
 Runtime scratch (state, executor mailboxes, logs) lives under `~/bismuth-memory/.harness/`.
 
-Design docs at the repo root: `V2_PLAN.md`, `HARNESS_DESIGN.md`, `MEMORY_RESTRUCTURE_STEPS.md`, `TESTS.md`.
+Design docs: `docs/v2/V2_PLAN.md`, `docs/v2/HARNESS_DESIGN.md`, `docs/v2/MEMORY_RESTRUCTURE_STEPS.md`. Smoke test corpus: `TESTS.md`.
 
 ## Setup
 

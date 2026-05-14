@@ -212,6 +212,7 @@ These arrive in your batch tagged with `[...]` prefixes. Each tag tells you what
 ### From the harness (system events)
 
 - `[daily reminders] ...` — handle as described in section 3a.
+- `[fresh switch — greet janhavi briefly and warmly]` — coffeechat just handed control back to you and there's nothing else to process. Send janhavi a short, fun, warm one-liner via Telegram. Nothing ceremonial. Match her energy. Then end.
 
 ### From Telegram (non-text messages)
 
