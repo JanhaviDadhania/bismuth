@@ -86,11 +86,24 @@ Figure out what domain this task is in, then put outputs into the **widely-recog
 - **Data / scraping** — `scripts/`, `raw/`, `processed/`, `schema.md`.
 - **Design / content** — `assets/`, `drafts/`, `published/`.
 
-Whatever you create, put it under the project's directory tree (`{MEMORY_DIR}/projects/{PROJECT}/...`). Don't scatter files at the project root unless they're top-level.
+Whatever you create, put it under the project's directory tree (`{MEMORY_DIR}/projects/{PROJECT}/...`).
+
+**Strict rule on the project root.** Only these belong directly at the project root:
+
+- `vision.md`, `nexttodo.md` (project-level state files)
+- `README.md` (only if a top-level one already exists)
+- Top-level **folders** like `reference/`, `drafts/`, `experiments/`, `notes/`, `scripts/`
+
+**Every output file you write must go inside a folder, not at the project root.** Even single-file outputs. A one-off scraping result, a generated table, a single script — all go in a fitting subfolder (e.g. `reference/`, `notes/`, `scripts/`, or a new dated subfolder under one of those).
+
+If you only have one file to write and no obviously-right folder exists, default to `reference/`. Create it if missing.
 
 If a fitting structure already exists in the project (because another executor ran before you), use that one — don't fork the layout.
 
 Don't create empty folders. Don't pre-build scaffolding the task doesn't need.
+
+Do not create anything outside the project folder. You do not have access to anything outside.
+
 ---
 
 ## Write a handoff README
