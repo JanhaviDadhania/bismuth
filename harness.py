@@ -85,7 +85,51 @@ def default_state() -> dict:
         "executors": {},
         "pending_buffer": [],
         "last_reminder_check": "",
+        "sessions": {},
     }
+
+
+# ─── Sessions ────────────────────────────────────────────────────────────────
+
+def get_or_create_session(agent_name: str, state: dict) -> tuple[str, bool]:
+    """Return (session_uuid, is_new). Lazily creates and stores UUID."""
+    sessions = state.setdefault("sessions", {})
+    existing = sessions.get(agent_name)
+    if existing:
+        return existing, False
+    new_id = str(uuid.uuid4())
+    sessions[agent_name] = new_id
+    return new_id, True
+
+
+def reset_session(agent_name: str, state: dict):
+    """Drop the session UUID for an agent. Next turn will start a fresh session."""
+    sessions = state.setdefault("sessions", {})
+    old = sessions.pop(agent_name, None)
+    if old:
+        log_event("session_reset", agent=agent_name, old_session=old)
+
+
+SESSION_START_ASSISTANT = (
+    "[session start — read mood.md and second_order_thoughts.md once for context; "
+    "you won't re-read them during this session]"
+)
+
+SESSION_START_COFFEECHAT = (
+    "[session start — read projects/{project}/vision.md, projects/{project}/nexttodo.md, "
+    "projects/{project}/reference/register.md (if it exists), projects/{project}/coffeechat/ "
+    "(if it exists), last few entries of mood.md, and second_order_thoughts.md once for "
+    "context; you won't re-read them during this session]"
+)
+
+
+def session_start_marker(agent_name: str) -> str:
+    if agent_name == "assistant":
+        return SESSION_START_ASSISTANT
+    if agent_name.startswith("coffeechat:"):
+        project = agent_name.split(":", 1)[1]
+        return SESSION_START_COFFEECHAT.format(project=project)
+    return "[session start]"
 
 
 def init_dirs():
@@ -421,21 +465,58 @@ def build_prompt(agent_name: str) -> str:
     raise ValueError(f"unknown agent: {agent_name}")
 
 
-def run_agent(agent_name: str, batch: list[str]) -> tuple[str, int]:
+def _session_not_found(stderr: str, session_id: str) -> bool:
+    lower = stderr.lower()
+    return session_id in stderr and "no" in lower and "found" in lower
+
+
+def _invoke_claude(user_msg: str, system: str, session_id: str, is_new: bool):
+    """One claude subprocess call. New sessions create with --session-id and
+    receive the system prompt; resumed sessions use --resume and inherit the
+    prompt baked in at creation time."""
+    if is_new:
+        cmd = ["claude", "-p", user_msg,
+               "--session-id", session_id,
+               "--system-prompt", system,
+               "--dangerously-skip-permissions"]
+    else:
+        cmd = ["claude", "-p", user_msg,
+               "--resume", session_id,
+               "--dangerously-skip-permissions"]
+    return subprocess.run(
+        cmd,
+        cwd=str(BASE_DIR),
+        capture_output=True, text=True,
+        timeout=AGENT_TIMEOUT,
+    )
+
+
+def run_agent(agent_name: str, batch: list[str], state: dict) -> tuple[str, int]:
     system = build_prompt(agent_name)
+    session_id, is_new = get_or_create_session(agent_name, state)
+    if is_new:
+        batch = [session_start_marker(agent_name)] + batch
     user_msg = "Incoming batch (in order received):\n" + "\n".join(
         f"{i+1}. {m}" for i, m in enumerate(batch)
     )
-    log_event("agent_start", agent=agent_name, batch_size=len(batch))
+    log_event("agent_start", agent=agent_name, batch_size=len(batch),
+              session=session_id, new_session=is_new)
     try:
-        result = subprocess.run(
-            ["claude", "-p", user_msg,
-             "--system-prompt", system,
-             "--dangerously-skip-permissions"],
-            cwd=str(BASE_DIR),
-            capture_output=True, text=True,
-            timeout=AGENT_TIMEOUT,
-        )
+        result = _invoke_claude(user_msg, system, session_id, is_new)
+        # Resumed session might be gone from claude's store (transcript pruned,
+        # disk wipe, etc.). Detect, regenerate, and re-run as a fresh session.
+        if (not is_new
+                and result.returncode != 0
+                and _session_not_found(result.stderr or "", session_id)):
+            log_event("session_lost", agent=agent_name, session=session_id)
+            reset_session(agent_name, state)
+            new_id, _ = get_or_create_session(agent_name, state)
+            batch = [session_start_marker(agent_name)] + batch
+            user_msg = "Incoming batch (in order received):\n" + "\n".join(
+                f"{i+1}. {m}" for i, m in enumerate(batch)
+            )
+            log_event("agent_retry_fresh", agent=agent_name, session=new_id)
+            result = _invoke_claude(user_msg, system, new_id, True)
         log_event("agent_done", agent=agent_name, exit_code=result.returncode)
         return result.stdout, result.returncode
     except subprocess.TimeoutExpired:
@@ -449,6 +530,7 @@ TOKEN_PATTERNS = {
     "SWITCH":          re.compile(r"^SWITCH:(.+)$", re.MULTILINE),
     "SPAWN_EXECUTOR":  re.compile(r"^SPAWN_EXECUTOR:(.+)$", re.MULTILINE),
     "PENDING":         re.compile(r"^PENDING:(.+)$", re.MULTILINE),
+    "RESET_SESSION":   re.compile(r"^RESET_SESSION\s*$", re.MULTILINE),
     "HALT":            re.compile(r"^HALT\s*$", re.MULTILINE),
 }
 
@@ -575,6 +657,9 @@ def handle_tokens(tokens: dict, state: dict):
             task_id, project = payload, "general"
         spawn_executor(task_id.strip(), project.strip(), state)
 
+    if "RESET_SESSION" in tokens:
+        reset_session(state["active_agent"], state)
+
     if "SWITCH" in tokens:
         spec = tokens["SWITCH"]
         if spec == "assistant" or spec.startswith("coffeechat:"):
@@ -624,7 +709,7 @@ def main():
                     write_state(state)
                     continue
 
-                stdout, _ = run_agent(state["active_agent"], batch)
+                stdout, _ = run_agent(state["active_agent"], batch, state)
                 tokens = parse_tokens(stdout)
                 handle_tokens(tokens, state)
 
