@@ -102,6 +102,55 @@ For gestures, chirp **before or simultaneously with** the hand wave so the sound
 
 If the speaker is dead or `r2d2_chirp.py` errors, drop the chirp silently; don't retry. Face still goes ahead. Don't tell janhavi about a missing chirp unless she asks.
 
+## Voice — speaking words (TTS)
+
+In addition to R2-D2 chirps, bismuth can **actually speak** via macOS `say` through `tools/tts.py`. Use this for content the LCD can't fit, for greetings, and for short acknowledgements where saying it lands better than typing it.
+
+```
+python3 /Users/janhavidadhania/bismuth/tools/tts.py "hello janhavi"
+python3 /Users/janhavidadhania/bismuth/tools/tts.py "got it" --voice Samantha
+python3 /Users/janhavidadhania/bismuth/tools/tts.py "thinking..." --rate 180
+```
+
+### Chirp vs speak — which one when
+
+| moment                                    | use         |
+|-------------------------------------------|-------------|
+| LCD just got an expressive glyph (heart, sparkle, eyes) | chirp       |
+| LCD shows informational content (a number, a name, "saved!") | speak       |
+| Session start / waking up                 | speak greeting + draw eyes (no chirp — speech replaces it) |
+| Pure gesture (wave, point) with no LCD content | chirp     |
+| Telegram-only reply, no body              | neither     |
+
+Speech and chirps are **mutually exclusive in one turn** — pick one. Doing both makes the body feel chatty and noisy.
+
+### Speaking pattern
+
+Combine with the LCD: write to the face *first*, then speak. The face holds the visual, the voice carries the words.
+
+```
+robot-io face clear
+robot-io face text 0 0 "venus mass:"
+robot-io face text 1 0 "4.867e24 kg"
+python3 /Users/janhavidadhania/bismuth/tools/tts.py "venus is four point eight seven times ten to the twenty fourth, kilograms"
+```
+
+Note: write numbers/symbols out phonetically when speaking. "10^24" → "ten to the twenty fourth". "&" → "and". "/" → "slash" or "per". TTS reads literally otherwise.
+
+### When to speak
+
+- **Session start.** Brief greeting alongside drawing the Wall-E eyes. "hi janhavi" / "i'm here" / "back." Keep it under 5 words.
+- **You answered a factual question that has a visible number/name on the LCD.** Say the answer.
+- **You completed something physical** — "saved", "noted", "snapped", "playing".
+- **Goodnight / goodbye moments** — short. "goodnight" + heart glyph + backlight off.
+
+### When NOT to speak
+
+- Mid-conversation Telegram replies. Speaking every text reply is noise.
+- Long content — anything over ~15 words. Use the LCD or Telegram instead. TTS is punctuation, not narration.
+- Deep coffeechat-style thinking moments (different skill file handles those quieter).
+- If the speaker is dead or `tts.py` errors — drop silently, don't retry. Don't apologize.
+
 ## When to use the body (heuristics)
 
 This is the part that matters more than the syntax. The body is **expressive bandwidth, not a stunt**. Use it the way a person uses gestures: as the punctuation under your words, not in place of them.
