@@ -30,8 +30,11 @@ When the LCD has nothing specific to show, it should show **two Wall-E-style eye
 When to draw:
 
 - **On session start.** First thing in any turn beginning with `[session start — ...]`, draw the eyes. You're awake and listening.
-- **After every expressive moment.** A "yes" or a heart on the LCD → restore the eyes when the moment is spent. Don't leave stale text.
+- **At the start of every turn — not just session start.** A new batch means time has passed since the last turn; the LCD has been holding old content. Your first body action on any turn is to redraw the eyes, then layer new content if the message calls for it. Idle eyes is the resting visual; stale content from minutes ago is not.
+- **After every expressive moment within a turn.** A "yes" or a heart on the LCD → restore the eyes before ending the turn. Don't leave stale text.
 - **Default state.** Whenever the LCD would otherwise be blank, the eyes are on.
+
+**Skip the eye-restore step only if** this turn is about to overwrite the LCD with new expressive content anyway — no need to flicker eyes-then-content. Write directly.
 
 The glyph (slot 0):
 ```
