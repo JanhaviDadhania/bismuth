@@ -1,8 +1,8 @@
 """
 Filesystem dropbox watcher.
 
-Watches ~/bismuth-dropbox/ for new files. When one appears (and has stopped
-growing, so we don't grab files mid-write), the watcher moves it to
+Watches {BISMUTH_MEMORY}/dropbox/ for new files. When one appears (and has
+stopped growing, so we don't grab files mid-write), the watcher moves it to
 {BISMUTH_MEMORY}/_dropbox_received/<name> and drops a synthetic message
 telling the agent where the file now lives.
 
@@ -19,7 +19,7 @@ from pathlib import Path
 
 INBOX = Path(os.environ["SYNTHETIC_INBOX"])
 MEMORY = Path(os.environ["BISMUTH_MEMORY"])
-DROPBOX = Path.home() / "bismuth-dropbox"
+DROPBOX = MEMORY / "dropbox"
 RECEIVED = MEMORY / "_dropbox_received"
 
 POLL_INTERVAL = 5         # seconds between scans

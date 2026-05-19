@@ -473,7 +473,7 @@ from pathlib import Path
 
 INBOX = Path(os.environ["SYNTHETIC_INBOX"])
 MEMORY = Path(os.environ["BISMUTH_MEMORY"])
-DROPBOX = Path.home() / "bismuth-dropbox"
+DROPBOX = MEMORY / "dropbox"
 RECEIVED = MEMORY / "_dropbox_received"
 POLL_INTERVAL = 5
 STABILITY_DELAY = 2  # seconds — wait this long to confirm file isn't mid-write
@@ -562,7 +562,7 @@ When Part B is built:
 6. Restart harness (`Ctrl-C`, then re-run) → `kill_orphan_watchers` logs
    killed PIDs; supervisor's first sweep spawns fresh watchers. Exactly one
    copy of each runs.
-7. Drop a file into `~/bismuth-dropbox/` → within ~7s, file is moved to
+7. Drop a file into `bismuth-memory/dropbox/` → within ~7s, file is moved to
    `bismuth-memory/_dropbox_received/` and `[fs-dropbox: <name> saved at
    <path>]` appears in the agent batch.
 8. At 09:00 local time → `[daily reminders] …` appears in the batch.
