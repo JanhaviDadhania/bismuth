@@ -22,7 +22,7 @@ import sys
 import threading
 import time
 import uuid
-from datetime import datetime, time as dtime
+from datetime import datetime
 from pathlib import Path
 
 import requests
@@ -42,6 +42,10 @@ PENDING_TASKS_DIR = HARNESS_DIR / "pending_tasks"
 INBOX_DIR = HARNESS_DIR / "inbox"
 INBOX_PRUNE_AGE_DAYS = 7
 
+SYNTHETIC_INBOX = HARNESS_DIR / "synthetic_inbox"
+WATCHER_STATE_DIR = HARNESS_DIR / "watcher_state"
+WATCHERS_DIR = BASE_DIR / "tools" / "watchers"
+
 
 # ─── Tunables ────────────────────────────────────────────────────────────────
 
@@ -49,8 +53,18 @@ EXECUTOR_CAP = 3
 LONG_POLL_TIMEOUT = 50      # seconds — Telegram thread holds the connection this long
 MAIN_TICK = 1.0             # seconds — main loop max idle wait between mailbox/buffer checks
 AGENT_TIMEOUT = 600
-REMINDER_TIME = dtime(9, 0)  # daily nudge fires at or after this local time, once per day
 TELEGRAM_API = "https://api.telegram.org/bot{token}/{method}"
+
+# Synthetic inbox guards
+MAX_SYNTHETIC_MESSAGE = 10_000      # chars; longer messages get truncated
+MAX_FILES_PER_TICK = 20             # cap drain to prevent prompt-bomb on crash-loop
+
+# Watcher supervisor
+WATCHER_SWEEP_INTERVAL = 60               # seconds between supervisor sweeps
+WATCHER_BACKOFF_BASE = 30                 # seconds; doubled per consecutive crash
+WATCHER_BACKOFF_MAX = 1800                # cap at 30 min between restart attempts
+WATCHER_HEALTHY_UPTIME = 300              # seconds — uptime needed to reset crash count
+WATCHER_FAILURE_NOTIFY_THRESHOLD = 3      # consecutive crashes before notifying agent
 
 
 # ─── Environment ─────────────────────────────────────────────────────────────
@@ -84,14 +98,152 @@ def default_state() -> dict:
         "telegram_offset": 0,
         "executors": {},
         "pending_buffer": [],
-        "last_reminder_check": "",
+        "sessions": {},
+        "watchers": {},
     }
+
+
+# ─── Sessions ────────────────────────────────────────────────────────────────
+
+def get_or_create_session(agent_name: str, state: dict) -> tuple[str, bool]:
+    """Return (session_uuid, is_new). Lazily creates and stores UUID."""
+    sessions = state.setdefault("sessions", {})
+    existing = sessions.get(agent_name)
+    if existing:
+        return existing, False
+    new_id = str(uuid.uuid4())
+    sessions[agent_name] = new_id
+    return new_id, True
+
+
+def reset_session(agent_name: str, state: dict):
+    """Drop the session UUID for an agent. Next turn will start a fresh session."""
+    sessions = state.setdefault("sessions", {})
+    old = sessions.pop(agent_name, None)
+    if old:
+        log_event("session_reset", agent=agent_name, old_session=old)
+
+
+SESSION_START_ASSISTANT = (
+    "[session start — read mood.md and second_order_thoughts.md once for context; "
+    "you won't re-read them during this session]"
+)
+
+SESSION_START_COFFEECHAT = (
+    "[session start — read projects/{project}/vision.md, projects/{project}/nexttodo.md, "
+    "projects/{project}/reference/register.md (if it exists), projects/{project}/coffeechat/ "
+    "(if it exists), last few entries of mood.md, and second_order_thoughts.md once for "
+    "context; you won't re-read them during this session]"
+)
+
+
+def session_start_marker(agent_name: str) -> str:
+    if agent_name == "assistant":
+        return SESSION_START_ASSISTANT
+    if agent_name.startswith("coffeechat:"):
+        project = agent_name.split(":", 1)[1]
+        return SESSION_START_COFFEECHAT.format(project=project)
+    return "[session start]"
+
+
+SYNTHETIC_INBOX_README = """\
+This directory is the **synthetic inbox** — any process can drop text files
+here and the harness will treat them as synthetic messages to the active
+agent on its next tick (≤ 1 second).
+
+## Atomic-write contract
+
+Writers MUST:
+1. Write to `<name>.txt.tmp` first.
+2. `os.rename` (or shell `mv`) to `<name>.txt`.
+
+The harness only reads files ending in `.txt`. Partial `.tmp` files are
+ignored, so a half-written file can never be picked up.
+
+## What happens to files
+
+Each `.txt` file is read once, its contents become one synthetic message,
+and the file is deleted. The harness sorts by mtime (chronological), caps
+at 20 files per tick, and truncates messages longer than 10 KB.
+
+## One-way contract
+
+Writers only WRITE here. Never read or unlink — that's the harness's job.
+"""
+
+WATCHERS_README = """\
+This directory holds **watcher scripts** — long-running processes that
+sense the outside world (filesystem, camera, calendar, webhooks, …) and
+poke the assistant by dropping synthetic messages into `SYNTHETIC_INBOX`.
+
+The harness's watcher supervisor starts each `*.py` file here as a child
+process, restarts crashed ones with exponential backoff, and notifies the
+agent after 3 consecutive crashes.
+
+## File naming
+
+- `<name>.py` — picked up and auto-spawned.
+- `_<name>.py` — underscore prefix = ignored (templates, disabled).
+
+## Watcher contract
+
+Every watcher MUST:
+
+1. Run an indefinite loop (or block on its event source).
+2. Drop messages into `os.environ["SYNTHETIC_INBOX"]` using atomic writes:
+   write to `<name>.txt.tmp`, then `os.rename` to `<name>.txt`.
+3. Persist any state to `os.environ["WATCHER_STATE_DIR"]` (a per-watcher
+   directory the harness creates).
+4. Log to stderr — captured to `{HARNESS_DIR}/watcher_<stem>.log`.
+   Don't use stdout for coordination; use the inbox.
+5. NEVER read from `SYNTHETIC_INBOX`. The harness owns the drain side.
+6. Exit non-zero only on genuine failure. The supervisor backs off
+   exponentially (30s base, doubling, capped at 30 min) and after 3
+   consecutive crashes drops a `[watcher: <name> is failing …]` synthetic
+   message so the agent learns about it.
+
+## Environment variables (set by the supervisor)
+
+| Var                  | Meaning                                                |
+|----------------------|--------------------------------------------------------|
+| `SYNTHETIC_INBOX`    | Absolute path; where to drop messages.                 |
+| `WATCHER_STATE_DIR`  | Absolute path; per-watcher persistent state directory. |
+| `BISMUTH_BASE`       | Absolute path; repo root.                              |
+| `BISMUTH_MEMORY`     | Absolute path; memory root.                            |
+
+## Message format
+
+Convention: prefix each message with `[source: …]` so skill files can
+teach the agent how to react. Examples:
+
+- `[fs-dropbox: paper.pdf saved at /…/paper.pdf]`
+- `[daily reminders] …`
+- `[camera: motion detected at 14:02; snapshot at /tmp/cam_x.jpg]`
+
+Not enforced by the harness — just a convention.
+
+## Start with `_template.py`
+
+Copy `_template.py` (the underscore prefix makes it inert) to `<name>.py`
+when you're ready to enable a new watcher. The supervisor picks it up on
+its next sweep (within 60 seconds).
+"""
+
+
+def _write_if_missing(path: Path, content: str):
+    if not path.exists():
+        path.write_text(content)
 
 
 def init_dirs():
     HARNESS_DIR.mkdir(parents=True, exist_ok=True)
     PENDING_TASKS_DIR.mkdir(parents=True, exist_ok=True)
     INBOX_DIR.mkdir(parents=True, exist_ok=True)
+    SYNTHETIC_INBOX.mkdir(parents=True, exist_ok=True)
+    WATCHER_STATE_DIR.mkdir(parents=True, exist_ok=True)
+    WATCHERS_DIR.mkdir(parents=True, exist_ok=True)
+    _write_if_missing(SYNTHETIC_INBOX / "README.md", SYNTHETIC_INBOX_README)
+    _write_if_missing(WATCHERS_DIR / "README.md", WATCHERS_README)
 
 
 def prune_inbox():
@@ -341,22 +493,184 @@ class TelegramPoller(threading.Thread):
         self.shutdown.set()
 
 
-# ─── Daily reminder nudge ────────────────────────────────────────────────────
+# ─── Synthetic inbox ─────────────────────────────────────────────────────────
 
-def check_daily_reminder(state: dict) -> list[str]:
-    """Inject a synthetic [daily reminders] message once per day at or after REMINDER_TIME."""
-    now = datetime.now()
-    today = now.strftime("%Y-%m-%d")
-    if state.get("last_reminder_check") == today:
+def read_synthetic_inbox() -> list[str]:
+    """Drain text files from SYNTHETIC_INBOX. Caps file count + message size.
+    Files are consumed (deleted) after read. Sorted by mtime (chronological)."""
+    out: list[str] = []
+    try:
+        files = [f for f in SYNTHETIC_INBOX.iterdir()
+                 if f.is_file() and f.name.endswith(".txt")]
+    except FileNotFoundError:
         return []
-    if now.time() < REMINDER_TIME:
-        return []
-    state["last_reminder_check"] = today
-    log_event("daily_reminder_fired", date=today)
-    return [
-        "[daily reminders] read reminders.md, surface anything due today or coming up, "
-        "and handle any LAST OF SERIES entries."
-    ]
+    files.sort(key=lambda f: f.stat().st_mtime)
+
+    for f in files[:MAX_FILES_PER_TICK]:
+        try:
+            text = f.read_text()
+            original_len = len(text)
+            if original_len > MAX_SYNTHETIC_MESSAGE:
+                text = (text[:MAX_SYNTHETIC_MESSAGE]
+                        + f"\n...[truncated; original {original_len} chars]")
+                log_event("synthetic_msg_truncated", file=f.name, length=original_len)
+            out.append(text.strip())
+            f.unlink()
+        except Exception as e:
+            log_event("synthetic_inbox_read_error", file=f.name, error=str(e))
+
+    if len(files) > MAX_FILES_PER_TICK:
+        log_event("synthetic_inbox_throttled",
+                  drained=MAX_FILES_PER_TICK,
+                  remaining=len(files) - MAX_FILES_PER_TICK)
+    return out
+
+
+# ─── Watcher supervisor ──────────────────────────────────────────────────────
+
+def kill_orphan_watchers():
+    """On boot: kill any leftover watcher processes from a previous harness.
+    Watchers are stateless across boots; the supervisor's first sweep spawns
+    fresh ones."""
+    try:
+        r = subprocess.run(
+            ["pgrep", "-f", r"tools/watchers/.*\.py"],
+            capture_output=True, text=True, timeout=5,
+        )
+    except Exception as e:
+        log_event("pgrep_failed", error=str(e))
+        return
+    for pid_str in r.stdout.split():
+        try:
+            pid = int(pid_str)
+            os.kill(pid, 9)
+            log_event("orphan_watcher_killed", pid=pid)
+        except (ProcessLookupError, PermissionError, ValueError):
+            pass
+
+
+def _pid_is_our_watcher(pid: int, script_name: str) -> bool:
+    """Verify pid is alive AND its cmdline references our watcher script.
+    Defends against PID reuse by unrelated processes."""
+    try:
+        os.kill(pid, 0)
+    except (ProcessLookupError, PermissionError):
+        return False
+    try:
+        r = subprocess.run(
+            ["ps", "-p", str(pid), "-o", "command="],
+            capture_output=True, text=True, timeout=2,
+        )
+        return script_name in r.stdout
+    except Exception:
+        # If ps fails, fall back to trusting the PID-alive check
+        return True
+
+
+def _spawn_watcher(script: Path) -> subprocess.Popen:
+    log_path = HARNESS_DIR / f"watcher_{script.stem}.log"
+    state_dir = WATCHER_STATE_DIR / script.stem
+    state_dir.mkdir(parents=True, exist_ok=True)
+
+    env = os.environ.copy()
+    env["SYNTHETIC_INBOX"] = str(SYNTHETIC_INBOX)
+    env["BISMUTH_BASE"] = str(BASE_DIR)
+    env["BISMUTH_MEMORY"] = str(MEMORY_DIR)
+    env["WATCHER_STATE_DIR"] = str(state_dir)
+
+    with open(log_path, "a") as logf:
+        proc = subprocess.Popen(
+            [sys.executable, str(script)],
+            cwd=str(BASE_DIR),
+            stdout=logf, stderr=subprocess.STDOUT,
+            env=env,
+        )
+    return proc
+
+
+def _notify_watcher_failure(name: str):
+    """Drop a synthetic message into the inbox so the agent learns about a
+    persistently failing watcher."""
+    log_path = HARNESS_DIR / f"watcher_{Path(name).stem}.log"
+    msg = (f"[watcher: {name} is failing repeatedly — "
+           f"last {WATCHER_FAILURE_NOTIFY_THRESHOLD} restarts crashed. "
+           f"Check {log_path} for the error.]")
+    fname = f"watcher_failure_{Path(name).stem}_{int(time.time())}.txt"
+    tmp = SYNTHETIC_INBOX / (fname + ".tmp")
+    tmp.write_text(msg)
+    tmp.rename(SYNTHETIC_INBOX / fname)
+    log_event("watcher_failure_notified", name=name)
+
+
+def supervise_watchers(state: dict):
+    """Ensure every tools/watchers/<name>.py has a live child.
+    Backs off exponentially on consecutive crashes; notifies the agent after
+    WATCHER_FAILURE_NOTIFY_THRESHOLD crashes."""
+    tracked = state.setdefault("watchers", {})
+    now = time.time()
+
+    # 1. Drop watchers whose script file no longer exists
+    for name in list(tracked.keys()):
+        if not (WATCHERS_DIR / name).exists():
+            try:
+                os.kill(tracked[name]["pid"], 9)
+            except (ProcessLookupError, PermissionError):
+                pass
+            del tracked[name]
+            log_event("watcher_removed", name=name)
+
+    # 2. For each script present, ensure a process is live
+    for script in sorted(WATCHERS_DIR.glob("*.py")):
+        if script.name.startswith("_"):
+            continue  # template / disabled
+
+        name = script.name
+        info = tracked.get(name)
+
+        if info and _pid_is_our_watcher(info["pid"], name):
+            continue  # healthy
+
+        # Determine consecutive crash count
+        if info:
+            uptime = now - info.get("last_spawn_ts", now)
+            if uptime >= WATCHER_HEALTHY_UPTIME:
+                crash_count = 1
+            else:
+                crash_count = info.get("crash_count", 0) + 1
+        else:
+            crash_count = 0  # first ever spawn — no backoff
+
+        # Backoff window check
+        if info and crash_count > 0:
+            backoff = min(
+                WATCHER_BACKOFF_BASE * (2 ** max(crash_count - 1, 0)),
+                WATCHER_BACKOFF_MAX,
+            )
+            if now - info.get("last_spawn_ts", 0) < backoff:
+                continue
+
+        # Spawn (or respawn)
+        try:
+            proc = _spawn_watcher(script)
+        except Exception as e:
+            log_event("watcher_spawn_error", name=name, error=str(e))
+            continue
+
+        prev_notified = info.get("notified", False) if info else False
+        tracked[name] = {
+            "pid": proc.pid,
+            "last_spawn_ts": now,
+            "crash_count": crash_count,
+            "notified": False if crash_count == 0 else prev_notified,
+        }
+        log_event("watcher_spawned", name=name, pid=proc.pid,
+                  crash_count=crash_count)
+
+        # Surface persistent failures back to the agent — once per failure run
+        if (crash_count >= WATCHER_FAILURE_NOTIFY_THRESHOLD
+                and not tracked[name]["notified"]):
+            _notify_watcher_failure(name)
+            tracked[name]["notified"] = True
 
 
 # ─── Mailbox ─────────────────────────────────────────────────────────────────
@@ -406,36 +720,99 @@ def _substitute(text: str, project: str = "general") -> str:
             .replace("{MEMORY_DIR}", str(MEMORY_DIR))
             .replace("{HARNESS_DIR}", str(HARNESS_DIR))
             .replace("{PENDING_TASKS_DIR}", str(PENDING_TASKS_DIR))
+            .replace("{SYNTHETIC_INBOX}", str(SYNTHETIC_INBOX))
+            .replace("{WATCHERS_DIR}", str(WATCHERS_DIR))
             .replace("{TELEGRAM_CLI}", str(BASE_DIR / "tools" / "telegram_cli.py"))
             .replace("{project_name}", project)
             .replace("{PROJECT}", project))
 
 
+SKILL_SEPARATOR = "\n\n---\n\n"
+
+
+def _load_skills(skills_dir: Path) -> str:
+    """Concatenate sorted *.md files under skills_dir. Returns '' if dir missing or empty."""
+    if not skills_dir.is_dir():
+        return ""
+    parts = []
+    for f in sorted(skills_dir.glob("*.md")):
+        try:
+            parts.append(f.read_text())
+        except Exception as e:
+            log_event("skill_load_error", file=str(f), error=str(e))
+    return SKILL_SEPARATOR.join(parts)
+
+
 def build_prompt(agent_name: str) -> str:
     prompts_dir = BASE_DIR / "prompts"
     if agent_name == "assistant":
-        return _substitute((prompts_dir / "assistant.md").read_text())
+        base = (prompts_dir / "assistant.md").read_text()
+        skills = _load_skills(prompts_dir / "skills" / "assistant")
+        full = base + (SKILL_SEPARATOR + skills if skills else "")
+        return _substitute(full)
     if agent_name.startswith("coffeechat:"):
         project = agent_name.split(":", 1)[1]
-        return _substitute((prompts_dir / "coffeechat.md").read_text(), project=project)
+        base = (prompts_dir / "coffeechat.md").read_text()
+        global_skills = _load_skills(prompts_dir / "skills" / "coffeechat")
+        project_skills = _load_skills(MEMORY_DIR / "projects" / project / "skills")
+        extras = SKILL_SEPARATOR.join(s for s in (global_skills, project_skills) if s)
+        full = base + (SKILL_SEPARATOR + extras if extras else "")
+        return _substitute(full, project=project)
     raise ValueError(f"unknown agent: {agent_name}")
 
 
-def run_agent(agent_name: str, batch: list[str]) -> tuple[str, int]:
+def _session_not_found(stderr: str, session_id: str) -> bool:
+    lower = stderr.lower()
+    return session_id in stderr and "no" in lower and "found" in lower
+
+
+def _invoke_claude(user_msg: str, system: str, session_id: str, is_new: bool):
+    """One claude subprocess call. New sessions create with --session-id and
+    receive the system prompt; resumed sessions use --resume and inherit the
+    prompt baked in at creation time."""
+    if is_new:
+        cmd = ["claude", "-p", user_msg,
+               "--session-id", session_id,
+               "--system-prompt", system,
+               "--dangerously-skip-permissions"]
+    else:
+        cmd = ["claude", "-p", user_msg,
+               "--resume", session_id,
+               "--dangerously-skip-permissions"]
+    return subprocess.run(
+        cmd,
+        cwd=str(BASE_DIR),
+        capture_output=True, text=True,
+        timeout=AGENT_TIMEOUT,
+    )
+
+
+def run_agent(agent_name: str, batch: list[str], state: dict) -> tuple[str, int]:
     system = build_prompt(agent_name)
+    session_id, is_new = get_or_create_session(agent_name, state)
+    if is_new:
+        batch = [session_start_marker(agent_name)] + batch
     user_msg = "Incoming batch (in order received):\n" + "\n".join(
         f"{i+1}. {m}" for i, m in enumerate(batch)
     )
-    log_event("agent_start", agent=agent_name, batch_size=len(batch))
+    log_event("agent_start", agent=agent_name, batch_size=len(batch),
+              session=session_id, new_session=is_new)
     try:
-        result = subprocess.run(
-            ["claude", "-p", user_msg,
-             "--system-prompt", system,
-             "--dangerously-skip-permissions"],
-            cwd=str(BASE_DIR),
-            capture_output=True, text=True,
-            timeout=AGENT_TIMEOUT,
-        )
+        result = _invoke_claude(user_msg, system, session_id, is_new)
+        # Resumed session might be gone from claude's store (transcript pruned,
+        # disk wipe, etc.). Detect, regenerate, and re-run as a fresh session.
+        if (not is_new
+                and result.returncode != 0
+                and _session_not_found(result.stderr or "", session_id)):
+            log_event("session_lost", agent=agent_name, session=session_id)
+            reset_session(agent_name, state)
+            new_id, _ = get_or_create_session(agent_name, state)
+            batch = [session_start_marker(agent_name)] + batch
+            user_msg = "Incoming batch (in order received):\n" + "\n".join(
+                f"{i+1}. {m}" for i, m in enumerate(batch)
+            )
+            log_event("agent_retry_fresh", agent=agent_name, session=new_id)
+            result = _invoke_claude(user_msg, system, new_id, True)
         log_event("agent_done", agent=agent_name, exit_code=result.returncode)
         return result.stdout, result.returncode
     except subprocess.TimeoutExpired:
@@ -449,6 +826,7 @@ TOKEN_PATTERNS = {
     "SWITCH":          re.compile(r"^SWITCH:(.+)$", re.MULTILINE),
     "SPAWN_EXECUTOR":  re.compile(r"^SPAWN_EXECUTOR:(.+)$", re.MULTILINE),
     "PENDING":         re.compile(r"^PENDING:(.+)$", re.MULTILINE),
+    "RESET_SESSION":   re.compile(r"^RESET_SESSION\s*$", re.MULTILINE),
     "HALT":            re.compile(r"^HALT\s*$", re.MULTILINE),
 }
 
@@ -575,6 +953,9 @@ def handle_tokens(tokens: dict, state: dict):
             task_id, project = payload, "general"
         spawn_executor(task_id.strip(), project.strip(), state)
 
+    if "RESET_SESSION" in tokens:
+        reset_session(state["active_agent"], state)
+
     if "SWITCH" in tokens:
         spec = tokens["SWITCH"]
         if spec == "assistant" or spec.startswith("coffeechat:"):
@@ -594,11 +975,14 @@ def main():
     _load_env()
     init_dirs()
     prune_inbox()
+    kill_orphan_watchers()
     state = read_state()
     log_event("harness_start", active_agent=state["active_agent"])
 
     poller = TelegramPoller(initial_offset=state["telegram_offset"])
     poller.start()
+
+    last_watcher_sweep = 0.0
 
     try:
         while True:
@@ -614,7 +998,11 @@ def main():
 
                 reap_executors(state)
                 synthetic = read_mailbox(state)
-                synthetic += check_daily_reminder(state)
+                synthetic += read_synthetic_inbox()
+
+                if time.time() - last_watcher_sweep >= WATCHER_SWEEP_INTERVAL:
+                    supervise_watchers(state)
+                    last_watcher_sweep = time.time()
 
                 buffer = state.get("pending_buffer", [])
                 batch = buffer + synthetic + messages
@@ -624,7 +1012,7 @@ def main():
                     write_state(state)
                     continue
 
-                stdout, _ = run_agent(state["active_agent"], batch)
+                stdout, _ = run_agent(state["active_agent"], batch, state)
                 tokens = parse_tokens(stdout)
                 handle_tokens(tokens, state)
 
