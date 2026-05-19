@@ -59,5 +59,5 @@ its next sweep (within 60 seconds).
 - `daily_reminder.py` — fires once per day at 09:00 local, drops the
   `[daily reminders] …` synthetic message. Replaces what used to be a
   hardcoded function inside the harness.
-- `fs_dropbox.py` — watches `~/bismuth-dropbox/`; routes new files to
+- `fs_dropbox.py` — watches `{BISMUTH_MEMORY}/dropbox/`; routes new files to
   `{BISMUTH_MEMORY}/_dropbox_received/` and notifies the agent.
