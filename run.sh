@@ -29,16 +29,37 @@ fi
 
 # ─────────────────────────────────────────────
 # Periodic memory sync (every 15 minutes)
+# After 3 consecutive failures, alert the agent via the synthetic inbox
+# (once per failure streak) so janhavi hears about it on Telegram.
 # ─────────────────────────────────────────────
 
-(while true; do
+notify_sync_failure() {
+  local inbox="$BISMUTH_MEMORY_DIR/.harness/synthetic_inbox"
+  mkdir -p "$inbox"
+  local name="memory_sync_failure_$(date +%s).txt"
+  printf '%s' "[memory-sync: git sync has failed $1 times in a row — local edits may not be reaching origin. Check network or rebase conflicts in $BISMUTH_MEMORY_DIR, and tell janhavi.]" > "$inbox/$name.tmp"
+  mv "$inbox/$name.tmp" "$inbox/$name"
+}
+
+(SYNC_FAILS=0; SYNC_NOTIFIED=0
+while true; do
   sleep 900
-  git -C "$BISMUTH_MEMORY_DIR" add -A || echo "[memory-sync] add failed"
+  ok=1
+  git -C "$BISMUTH_MEMORY_DIR" add -A || { echo "[memory-sync] add failed"; ok=0; }
   if ! git -C "$BISMUTH_MEMORY_DIR" diff --cached --quiet; then
-    git -C "$BISMUTH_MEMORY_DIR" commit -m "periodic sync" || echo "[memory-sync] commit failed"
+    git -C "$BISMUTH_MEMORY_DIR" commit -m "periodic sync" || { echo "[memory-sync] commit failed"; ok=0; }
   fi
-  git -C "$BISMUTH_MEMORY_DIR" pull --rebase || echo "[memory-sync] pull --rebase failed — local edits may not reach origin"
-  git -C "$BISMUTH_MEMORY_DIR" push || echo "[memory-sync] push failed — local edits did NOT reach origin"
+  git -C "$BISMUTH_MEMORY_DIR" pull --rebase || { echo "[memory-sync] pull --rebase failed — local edits may not reach origin"; ok=0; }
+  git -C "$BISMUTH_MEMORY_DIR" push || { echo "[memory-sync] push failed — local edits did NOT reach origin"; ok=0; }
+  if [ "$ok" -eq 1 ]; then
+    SYNC_FAILS=0; SYNC_NOTIFIED=0
+  else
+    SYNC_FAILS=$((SYNC_FAILS + 1))
+    if [ "$SYNC_FAILS" -ge 3 ] && [ "$SYNC_NOTIFIED" -eq 0 ]; then
+      notify_sync_failure "$SYNC_FAILS"
+      SYNC_NOTIFIED=1
+    fi
+  fi
 done) &
 SYNC_PID=$!
 echo "memory sync started (pid $SYNC_PID)"

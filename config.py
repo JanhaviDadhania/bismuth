@@ -17,6 +17,8 @@ def load_config() -> dict:
 
 _config = load_config()
 
-# Memory directory — read from config.yaml, defaults to memory/ inside project
-_raw = _config.get("memory_path", "memory")
+# Memory directory — read from config.yaml. The fallback is anchored to the
+# repo, never the caller's cwd, so launching from elsewhere can't silently
+# grow a memory tree in the wrong place.
+_raw = _config.get("memory_path") or (BASE_DIR / "memory")
 MEMORY_DIR = Path(os.path.expanduser(str(_raw))).resolve()

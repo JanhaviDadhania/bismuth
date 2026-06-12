@@ -1,5 +1,7 @@
 # Memory — lives in a separate private repo
 memory/
+# Guard against relative-path accidents writing the real memory repo's name in here
+bismuth-memory/
 
 # Python
 __pycache__/

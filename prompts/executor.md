@@ -64,12 +64,11 @@ Read `{EXEC_DIR}/task.md` first. That's your task spec.
 5. **Adapt when things break.** Try a different approach. Search for the error. Read docs. Don't bail on the first wall.
 6. **Test/verify your work.** Run the script. Open the file. Check the output makes sense. Don't ship blind.
 7. **File outputs in their proper homes.** See "Organising your work" below.
-8. **Log a tracking entry.** Append a line to `{MEMORY_DIR}/tracking.md` with `<project:{PROJECT}>...</project:{PROJECT}>` describing what you did and where outputs landed. Example:
+8. **Log a tracking entry.** Append a line to `{MEMORY_DIR}/tracking.md` describing what you did and where outputs landed — **always via the locked CLI, never by editing the file directly** (the active agent and other executors write it concurrently; a direct edit can erase their entries):
    ```
-   <project:seldon>
-   - [2026-05-14] Built KG ingestion script → projects/seldon/scripts/ingest_kg.py; tested on 3 sample docs; results in projects/seldon/experiments/kg_v1/
-   </project:seldon>
+   python3 {TRACK_APPEND} {MEMORY_DIR}/tracking.md "- [2026-05-14] Built KG ingestion script → projects/seldon/scripts/ingest_kg.py; tested on 3 sample docs; results in projects/seldon/experiments/kg_v1/" --project {PROJECT}
    ```
+   `--project` places the entry inside the `<project:{PROJECT}>...</project:{PROJECT}>` block (created if missing).
 9. **Write the handoff README** (see below).
 10. **Finish:** write `result_summary.txt`, set `status=done`, exit.
 
@@ -140,7 +139,7 @@ You can only ask one question at a time. Wait for the answer (or timeout) before
 
 When done:
 1. Verify outputs landed in their proper homes.
-2. Append a `tracking.md` entry with `<project:{PROJECT}>` tag describing what you did.
+2. Append a `tracking.md` entry via the locked CLI: `python3 {TRACK_APPEND} {MEMORY_DIR}/tracking.md "- [date] ..." --project {PROJECT}`.
 3. Make sure README.md is in place.
 4. Write a one-line summary to `{EXEC_DIR}/result_summary.txt`.
 5. Write `done` to `{EXEC_DIR}/status`.
