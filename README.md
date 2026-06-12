@@ -7,7 +7,7 @@
 
 <p align="center"><em>plus, Everybody is making their personal agent now. I didn't want to be the one left behind. But I also didn't want it to be another claude+chat. So I stayed up a few nights and made Bismuth. You just fork and setup this repo to have your own bismuth.</em></p>
 
-<p align="center"><em>No it doesn't do your dishes. It's a software agent, calm down. But it does check your calendar and find your next free slot, send emails for you, post on Instagram for you, remember everything you've ever told it, write code, browse the web, and honestly after 5 days it is going to know you schedule better than you do.</em></p>
+<p align="center"><em>No it doesn't do your dishes. It's a software agent, calm down. But it does remember everything you've ever told it, surface your reminders every morning, pick up any file you drop in a folder, run research tasks in the background, write code, browse the web, and honestly after 5 days it is going to know your schedule better than you do.</em></p>
 
 <p align="center"><em>As you start talking to bismuth, it stores everything it know about you in a diary. In memory/ folder. My Bismuth's memory lives in a separate private repo, and yours should too. You don't want your diary on public repo.</em></p>
 
@@ -25,7 +25,7 @@ Three agents driven by one long-running harness:
 - **Coffeechat** — thinking partner per project. Invoked when you signal you want to think/brainstorm. Hands back to assistant when done.
 - **Executor** — does the actual work. Spawned per task, runs in the background (up to 3 concurrent). Writes outputs into memory, asks via mailbox files when stuck.
 
-The **harness** owns Telegram polling, agent switching, executor lifecycle, and state persistence. Agents are stateless `claude -p` subprocesses; everything they remember lives on disk.
+The **harness** owns Telegram polling (with an on-disk spool so a crash can't lose messages), agent switching, executor lifecycle (with queueing past the cap), watcher supervision, and state persistence. Agents are `claude -p` subprocesses holding resumable sessions; everything they remember lives on disk. `/status` and `/halt` are answered by the harness directly — no LLM call, so they work even when the agent path is broken.
 
 ```
 home/
@@ -34,13 +34,17 @@ home/
 │   ├── assistant.md
 │   ├── coffeechat.md
 │   ├── executor.md
-│   └── evaluation.md     loaded manually in CLI for weekly eval
+│   ├── evaluation.md     loaded manually in CLI for weekly eval
+│   └── skills/           *.md skill files concatenated onto agent prompts
 ├── tools/
 │   ├── telegram_cli.py   send-only Telegram CLI used by agents
-│   ├── terminal.py
-│   └── transcribe.py     voice → text (faster-whisper)
+│   ├── track_append.py   flock'd append for shared files (tracking.md)
+│   ├── transcribe.py     voice → text (faster-whisper); also a CLI
+│   ├── tts.py            macOS `say` wrapper
+│   ├── r2d2_chirp.py     chirp synth for the robot body
+│   └── watchers/         auto-supervised sensors (daily_reminder, fs_dropbox, …)
 ├── run.sh                starts harness + memory git-sync loop
-└── config.yaml           env vars + memory_path
+└── config.yaml           env vars + memory_path (the only two keys read)
 ```
 
 Memory lives in a separate private repo at `~/bismuth-memory/`:
@@ -62,18 +66,18 @@ bismuth-memory/
     └── coffeechat/       (optional session state)
 ```
 
-Runtime scratch (state, executor mailboxes, logs) lives under `~/bismuth-memory/.harness/`.
+Runtime scratch (state, executor mailboxes, telegram spool, logs) lives under `~/bismuth-memory/.harness/` — gitignored in the memory repo; it's scratch, not memory.
 
 Design docs: `docs/v2/V2_PLAN.md`, `docs/v2/HARNESS_DESIGN.md`, `docs/v2/MEMORY_RESTRUCTURE_STEPS.md`. Smoke test corpus: `TESTS.md`.
 
 ## Setup
 
 1. Install app dependencies: `brew bundle`
-2. Install Python dependencies: `pip install anthropic faster-whisper requests pyyaml`
+2. Install Python dependencies: `pip install -r requirements.txt`
 3. Install browser: `npm install -g silicon-browser && silicon-browser install`
 4. Log in to sites once: `silicon-browser --profile silicon open <url>`
-5. Fill in `config.yaml` — add `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`. `ANTHROPIC_API_KEY` is optional if `claude login` has been run.
-6. Create `memory/<project>/vision.md` for each project.
+5. Copy `config.yaml.example` → `config.yaml` and fill in `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, and `memory_path` (your private memory repo). `ANTHROPIC_API_KEY` is optional if `claude login` has been run.
+6. In your memory repo, create `projects/<name>/vision.md` for each project (or just tell the assistant to start one).
 
 ## Running
 
@@ -82,6 +86,11 @@ Design docs: `docs/v2/V2_PLAN.md`, `docs/v2/HARNESS_DESIGN.md`, `docs/v2/MEMORY_
 ```
 
 The harness listens on Telegram. Talk to it; it routes, replies, switches to coffeechat when asked, and spawns executors when work needs doing.
+
+Two messages are answered by the harness itself, instantly and without an LLM call:
+
+- `/status` — active agent, session age, executors (running/asking/queued), watcher health.
+- `/halt` — kill all executors, clear the queue and buffer, reset to assistant.
 
 ### Weekly evaluation
 

@@ -1,6 +1,0 @@
-- making money
-- making progress toward research
-- making progress toward social skills and network
-- relationship
-- getting introduced to newer ideas
-- maintenance of life

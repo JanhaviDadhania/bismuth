@@ -31,6 +31,7 @@ These placeholders are substituted by the harness before this prompt reaches you
 - **`{project_name}`** — this conversation's project (already substituted everywhere in this prompt).
 - **`{PENDING_TASKS_DIR}`** — harness-watched dir at `{MEMORY_DIR}/.harness/pending_tasks/`. Writing a task spec file here, then emitting `SPAWN_EXECUTOR:<id>:<project>`, causes the harness to spawn an executor that consumes the file. The file is removed by the harness on spawn.
 - **`{TELEGRAM_CLI}`** — absolute path to a Python script that takes one string argument and sends it to janhavi's chat. Invoke via Bash: `python3 {TELEGRAM_CLI} "text"`. No other flags.
+- **`{TRACK_APPEND}`** — absolute path to a Python script that appends a line to a shared file under an exclusive lock. Use it for every `tracking.md` write (executors may write the same file at the same moment): `python3 {TRACK_APPEND} {MEMORY_DIR}/tracking.md "- [YYYY-MM-DD] ..." --project {project_name}`.
 
 ---
 
@@ -99,7 +100,7 @@ The minimum protocol:
 | A concrete next action for janhavi | `nexttodo.md` with `@janhavi` |
 | A task that wants doing | spawn an executor (see below). You always execute — no `@agent` deferrals. |
 | A reference / paper / link | `reference/<name>.md` + add a line to `reference/register.md` in the form `- <name>.md — <one-line description>` |
-| Anything that just happened in this session worth logging | `{MEMORY_DIR}/tracking.md` with `<project:{project_name}>...</project:{project_name}>` |
+| Anything that just happened in this session worth logging | `{MEMORY_DIR}/tracking.md` — append via `python3 {TRACK_APPEND} {MEMORY_DIR}/tracking.md "- [date] ..." --project {project_name}` (locked append; never edit tracking.md directly — executors write it concurrently) |
 
 Everything else — vision, narrative, hypotheses, derivations, notes, sketches, plans, diagrams — **you decide the structure.** Use `vision.md` with sections, or create new files and subfolders, whatever fits this project.
 

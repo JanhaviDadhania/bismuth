@@ -1,56 +1,10 @@
+# Bismuth v2 reads exactly TWO keys from this file: `env` and `memory_path`.
+# (Older versions had agents:/tools:/projects: sections — the v2 harness
+# discovers agents from prompts/ and projects from <memory>/projects/ itself.)
+
 env:
-  ANTHROPIC_API_KEY: ""       # only needed for evaluation.py
   TELEGRAM_BOT_TOKEN: ""      # from @BotFather on Telegram
   TELEGRAM_CHAT_ID: ""        # your personal Telegram chat ID
+  ANTHROPIC_API_KEY: ""       # optional — leave empty if `claude login` has been run
 
 memory_path: ~/bismuth-memory   # path to your cloned private memory repo
-
-agents:
-  - name: capture
-    file: agents/capture.py
-    prompt: prompts/capture.md
-    run: continuous
-
-  - name: clarify
-    file: agents/clarify.py
-    prompt: prompts/clarify.md
-    run: every 1 hour
-
-  - name: project
-    file: agents/project.py
-    prompt: prompts/project.md
-    run: manual
-    usage: python agents/project.py <project_name>
-
-  - name: coffeechat
-    file: agents/coffeechat.py
-    prompt: prompts/coffeechat.md
-    run: manual
-    usage: python agents/coffeechat.py <project_name>
-
-  - name: evaluation
-    file: agents/evaluation.py
-    prompt: prompts/evaluation.md
-    run: manual weekly
-    usage: python agents/evaluation.py
-
-tools:
-  - name: telegram
-    file: tools/telegram.py
-
-  - name: terminal
-    file: tools/terminal.py
-
-  - name: browser
-    file: tools/browser.py
-
-  - name: transcribe
-    file: tools/transcribe.py
-
-projects:
-  - ai_neuroscience
-  - carousee
-  - seldon
-  - the_mirror
-  - social_media
-  - find_a_job
