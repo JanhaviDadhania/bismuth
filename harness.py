@@ -53,6 +53,7 @@ DEAD_LETTER_DIR = HARNESS_DIR / "dead_letter"
 WATCHER_STATE_DIR = HARNESS_DIR / "watcher_state"
 WATCHERS_DIR = BASE_DIR / "tools" / "watchers"
 TRACK_APPEND = BASE_DIR / "tools" / "track_append.py"
+USAGE_LOG = MEMORY_DIR / "projects" / "bismuth" / "usage_log.jsonl"
 
 
 # ─── Tunables ────────────────────────────────────────────────────────────────
@@ -997,16 +998,20 @@ def _format_batch(batch: list[str]) -> str:
 def _invoke_claude(user_msg: str, system: str, session_id: str, is_new: bool):
     """One claude subprocess call. New sessions create with --session-id and
     receive the system prompt; resumed sessions use --resume and inherit the
-    prompt baked in at creation time."""
+    prompt baked in at creation time.
+
+    Uses --output-format stream-json so the final result line carries token
+    counts and total_cost_usd — we parse those out for usage_log.jsonl and
+    surface api_error_status on failure (it's stdout in this mode, not stderr)."""
+    common = ["--output-format", "stream-json", "--verbose",
+              "--dangerously-skip-permissions"]
     if is_new:
         cmd = ["claude", "-p", user_msg,
                "--session-id", session_id,
-               "--system-prompt", system,
-               "--dangerously-skip-permissions"]
+               "--system-prompt", system, *common]
     else:
         cmd = ["claude", "-p", user_msg,
-               "--resume", session_id,
-               "--dangerously-skip-permissions"]
+               "--resume", session_id, *common]
     return subprocess.run(
         cmd,
         cwd=str(BASE_DIR),
@@ -1015,11 +1020,63 @@ def _invoke_claude(user_msg: str, system: str, session_id: str, is_new: bool):
     )
 
 
+def _parse_stream_json(stdout: str) -> tuple[str, dict | None]:
+    """Find the final {'type':'result'} line in a stream-json transcript.
+    Returns (reply_text, result_obj). result_obj is None if no result line
+    was emitted (timeout, crash before completion, garbled output)."""
+    result_obj = None
+    for line in stdout.splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if obj.get("type") == "result":
+            result_obj = obj
+    if result_obj is None:
+        return "", None
+    return result_obj.get("result") or "", result_obj
+
+
+def append_usage_log(agent_name: str, result_obj: dict | None,
+                     exit_code: int, is_new: bool, session_id: str):
+    """Append one JSON line per attempt to projects/bismuth/usage_log.jsonl.
+    Records token counts, total_cost_usd, and error category — so monthly
+    spend and rate-limit incidents are inspectable after the fact."""
+    entry: dict = {
+        "ts": datetime.now().isoformat(),
+        "agent": agent_name,
+        "session_id": session_id,
+        "new_session": is_new,
+        "exit_code": exit_code,
+    }
+    if result_obj is not None:
+        entry["is_error"] = result_obj.get("is_error", False)
+        entry["api_error_status"] = result_obj.get("api_error_status")
+        entry["duration_ms"] = result_obj.get("duration_ms")
+        entry["num_turns"] = result_obj.get("num_turns")
+        entry["total_cost_usd"] = result_obj.get("total_cost_usd")
+        entry["usage"] = result_obj.get("usage")
+        entry["modelUsage"] = result_obj.get("modelUsage")
+    try:
+        USAGE_LOG.parent.mkdir(parents=True, exist_ok=True)
+        with open(USAGE_LOG, "a") as f:
+            f.write(json.dumps(entry) + "\n")
+    except Exception as e:
+        log_event("usage_log_write_error", error=str(e))
+
+
 def run_agent(agent_name: str, batch: list[str], state: dict) -> tuple[str, int]:
     """One agent turn, with one retry: any failure (nonzero exit, timeout,
     lost session) gets a second attempt in a brand-new session. A fresh
     session on a transient error costs context; losing janhavi's messages
-    costs more."""
+    costs more.
+
+    Returns (reply_text, exit_code). reply_text is the assistant's text
+    extracted from the stream-json result line — that's what callers feed
+    into parse_tokens()."""
     system = build_prompt(agent_name)
     session_id, is_new = get_or_create_session(agent_name, state)
     attempt_batch = ([session_start_marker(agent_name)] + batch) if is_new else batch
@@ -1031,19 +1088,25 @@ def run_agent(agent_name: str, batch: list[str], state: dict) -> tuple[str, int]
         result = _invoke_claude(_format_batch(attempt_batch), system, session_id, is_new)
     except subprocess.TimeoutExpired:
         log_event("agent_timeout", agent=agent_name, session=session_id)
-
-    if result is not None and result.returncode == 0:
-        touch_session(agent_name, state)
-        log_event("agent_done", agent=agent_name, exit_code=0)
-        return result.stdout, 0
+        append_usage_log(agent_name, None, -1, is_new, session_id)
 
     if result is not None:
+        reply_text, result_obj = _parse_stream_json(result.stdout or "")
+        append_usage_log(agent_name, result_obj, result.returncode, is_new, session_id)
+        if result.returncode == 0:
+            touch_session(agent_name, state)
+            log_event("agent_done", agent=agent_name, exit_code=0,
+                      cost_usd=(result_obj or {}).get("total_cost_usd"))
+            return reply_text, 0
+
         if not is_new and _session_not_found(result.stderr or "", session_id):
             log_event("session_lost", agent=agent_name, session=session_id)
         else:
             log_event("agent_attempt_failed", agent=agent_name,
                       exit_code=result.returncode,
-                      stderr_tail=(result.stderr or "")[-300:])
+                      api_error_status=(result_obj or {}).get("api_error_status"),
+                      stderr_tail=(result.stderr or "")[-300:],
+                      stdout_tail=(result.stdout or "")[-300:])
 
     # Retry once with a fresh session.
     reset_session(agent_name, state)
@@ -1056,11 +1119,15 @@ def run_agent(agent_name: str, batch: list[str], state: dict) -> tuple[str, int]
         )
     except subprocess.TimeoutExpired:
         log_event("agent_timeout", agent=agent_name, session=new_id)
+        append_usage_log(agent_name, None, -1, True, new_id)
         return "", -1
+    reply_text, result_obj = _parse_stream_json(result.stdout or "")
+    append_usage_log(agent_name, result_obj, result.returncode, True, new_id)
     if result.returncode == 0:
         touch_session(agent_name, state)
-    log_event("agent_done", agent=agent_name, exit_code=result.returncode)
-    return result.stdout, result.returncode
+    log_event("agent_done", agent=agent_name, exit_code=result.returncode,
+              cost_usd=(result_obj or {}).get("total_cost_usd"))
+    return reply_text, result.returncode
 
 
 # ─── Exit token parsing ──────────────────────────────────────────────────────
