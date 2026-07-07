@@ -2,14 +2,14 @@
 
 This folder contains the modular behavior protocols for Bismuth. The goal is to replace the monolithic prompt folder with a set of smaller documents that can be loaded by mode, task, and tool need.
 
-## Loading map
+## Loading map — hot and cold
 
-The harness assembles each mode's system prompt as: `soul.md` + mode prompt (`prompts/<mode>.md`) + that mode's protocols + skills. Keep this table in sync with `PROTOCOLS_BY_MODE` in `harness.py`.
+The harness assembles each mode's system prompt as: `soul.md` + mode prompt (`prompts/<mode>.md`) + that mode's **hot** protocols + skills. **Cold** protocols stay on disk; the mode prompt carries their trigger + pointer, and Bismuth reads them on demand when the trigger fires (see the Context Management Protocol). Keep this table in sync with `PROTOCOLS_BY_MODE` in `harness.py`.
 
-- **assistant**: 01–10, 12, 13, 16, 17
-- **coffeechat**: 01, 03–08, 12, 14, 16, 17
-- **executor**: 01, 04, 05, 07, 11
-- **evaluation**: runs manually in the CLI; its prompt points at 15 and 18 directly.
+- **assistant** — hot: 01–08, 16, 17 · cold: 09 reminders, 10 watchers, 12 skills, 13 project creation
+- **coffeechat** — hot: 01, 03–08, 14, 16, 17 · cold: 10 watchers, 12 skills
+- **executor** — hot: 01, 04, 05, 11, 19
+- **evaluation** — runs manually in the CLI; its prompt points at 15 and 18 directly.
 
 Prompts carry identity and judgment; protocols carry the exact contracts. Protocol changes go through 18 (propose → Janhavi approves).
 
@@ -24,7 +24,7 @@ Prompts carry identity and judgment; protocols carry the exact contracts. Protoc
 
 - `05_tool_usage_protocol.md` - available tools, when to use them, and how to minimize waste while maximizing quality.
 - `06_mode_switching_protocol.md` - assistant / coffeechat switching.
-- `07_executor_delegation_protocol.md` - how to spawn worker agents and how executors work.
+- `07_executor_delegation_protocol.md` - how to spawn worker agents and handle their messages.
 - `08_synthetic_message_protocol.md` - how harness and watcher messages arrive.
 - `09_reminder_runtime_protocol.md` - daily reminders and recurrence behavior.
 - `10_watcher_protocol.md` - proactive background sensors.
@@ -39,3 +39,4 @@ Prompts carry identity and judgment; protocols carry the exact contracts. Protoc
 - `16_session_lifecycle_protocol.md` - startup, topic shifts, resets, and endings.
 - `17_bismuth_janhavi_image_thinking_protocol.md` - thinking with Janhavi in images and drawings.
 - `18_protocol_update_protocol.md` - how Bismuth proposes changes to its own protocols.
+- `19_executor_operating_protocol.md` - how a worker agent does its task: work rules, mailbox, finishing.

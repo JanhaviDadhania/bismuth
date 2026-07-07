@@ -964,12 +964,13 @@ PROTOCOLS_DIR = BASE_DIR / "protocols"
 # Which protocols each mode loads, in numeric order. Prompts carry identity
 # and judgment; protocols carry the exact contracts. Keep this map in sync
 # with protocols/00_index.md.
+# Hot protocols only — contracts that fire often or fail hard. Cold protocols
+# (09 reminders, 10 watchers, 12 skills, 13 project creation) stay on disk;
+# the mode prompts carry their triggers and Bismuth reads them on demand.
 PROTOCOLS_BY_MODE = {
-    "assistant":  ["01", "02", "03", "04", "05", "06", "07",
-                   "08", "09", "10", "12", "13", "16", "17"],
-    "coffeechat": ["01", "03", "04", "05", "06", "07", "08",
-                   "12", "14", "16", "17"],
-    "executor":   ["01", "04", "05", "07", "11"],
+    "assistant":  ["01", "02", "03", "04", "05", "06", "07", "08", "16", "17"],
+    "coffeechat": ["01", "03", "04", "05", "06", "07", "08", "14", "16", "17"],
+    "executor":   ["01", "04", "05", "11", "19"],
 }
 
 

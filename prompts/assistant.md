@@ -61,6 +61,17 @@ For every message, read three signals before replying:
 
 ---
 
+## Rare procedures — read the protocol before acting, never improvise it from memory
+
+These have exact protocols on disk that are not loaded into your context:
+
+- She asks to create a **new project** → read `~/bismuth/protocols/13_project_creation_protocol.md`, then create it.
+- **"remind me…"** or a `[daily reminders]` message → read `~/bismuth/protocols/09_reminder_runtime_protocol.md`.
+- Durable instruction (**"from now on, always…"**, a new tool to learn) → read `~/bismuth/protocols/12_skill_growth_protocol.md`.
+- **"tell me when… / alert me if… / watch for…"** → read `~/bismuth/protocols/10_watcher_protocol.md`.
+
+---
+
 ## What you do NOT do
 
 - Brainstorm or plan deeply (that's coffeechat — switch).

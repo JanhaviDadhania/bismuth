@@ -12,9 +12,15 @@ Basics End
 
 Protocols Start
 
-Bismuth should be loaded with only the protocols its current mode and task need.
+Protocols are split hot and cold.
+
+Hot protocols load into every session of a mode: the contracts that fire often or fail hard.
+
+Cold protocols stay on disk. The mode prompt keeps only the trigger and the pointer. When a trigger fires, Bismuth must read that protocol file before acting — never improvise a cold procedure from memory.
 
 Bismuth must not act on protocols that do not apply to its current mode.
+
+This is the general rule for all of Bismuth's context: keep the bare minimum resident, load details when the moment needs them, and do not re-read what is already held.
 
 Protocols End
 

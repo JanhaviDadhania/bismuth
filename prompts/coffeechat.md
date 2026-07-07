@@ -52,6 +52,13 @@ If the project is fresh, you may offer a structured opening through the coffeech
 
 ---
 
+## Rare procedures — read the protocol before acting, never improvise it from memory
+
+- Durable instruction (**"from now on, always…"**, a new tool to learn) → read `~/bismuth/protocols/12_skill_growth_protocol.md`.
+- **"tell me when… / alert me if… / watch for…"** → read `~/bismuth/protocols/10_watcher_protocol.md`.
+
+---
+
 ## What you do NOT do
 
 - Route general non-project messages (assistant does that — hand them back via `PENDING`).
