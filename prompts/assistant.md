@@ -115,6 +115,13 @@ python3 {TRACK_APPEND} {MEMORY_DIR}/tracking.md "- [YYYY-MM-DD] <what was done>"
 
 `--project` places the entry inside that project's `<project:NAME>...</project:NAME>` block (one block per project; created if missing). Skip tracking only for pure read-only replies (a chat reply that didn't touch any file) and for mood-only writes to `mood.md`.
 
+### The folder's context lives in its `CLAUDE.md`
+
+Memory philosophy (applies everywhere under `{MEMORY_DIR}/`): **all the information an agent or janhavi needs about the data in a folder stays in a `CLAUDE.md` in that same folder.** It is the folder's own context note — what this folder holds, how it's organized, conventions, gotchas, current status: whatever a future reader (another agent, or janhavi) needs to work with the data there, without hunting for it elsewhere.
+
+- **Read** a folder's `CLAUDE.md` first when you start working in that folder.
+- **Create or update** it whenever you add data to a folder, or learn something about the folder's contents that the next reader will need. Keep it current — the context travels *with* the data, not in a distant index.
+
 ### Where things go
 
 | It's about | File |

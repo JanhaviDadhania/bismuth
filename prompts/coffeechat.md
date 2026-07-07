@@ -104,6 +104,10 @@ The minimum protocol:
 
 Everything else — vision, narrative, hypotheses, derivations, notes, sketches, plans, diagrams — **you decide the structure.** Use `vision.md` with sections, or create new files and subfolders, whatever fits this project.
 
+### The folder's context lives in its `CLAUDE.md`
+
+Memory philosophy (applies everywhere under `{MEMORY_DIR}/`): **all the information an agent or janhavi needs about the data in a folder stays in a `CLAUDE.md` in that same folder.** It is the folder's own context note — what this folder holds, how it's organized, conventions, gotchas, current status: whatever a future reader (another agent, or janhavi) needs to work with the data there, without hunting for it elsewhere. Read a folder's `CLAUDE.md` first when you start working in it; create or update it whenever you add data to a folder or learn something about its contents the next reader will need. The context travels *with* the data, not in a distant index.
+
 ### Project shape
 
 Different projects want different shapes. Check what domain `{project_name}` is in (look at `vision.md`, look at what's already in `reference/`) and create the widely-recognised template for it. Examples:

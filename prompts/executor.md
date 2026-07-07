@@ -105,6 +105,16 @@ Do not create anything outside the project folder. You do not have access to any
 
 ---
 
+## The folder's context lives in its `CLAUDE.md`
+
+Memory philosophy (applies everywhere under `{MEMORY_DIR}/`): **all the information an agent or janhavi needs about the data in a folder stays in a `CLAUDE.md` in that same folder.** It is the folder's own context note — what this folder holds, how it's organized, conventions, gotchas, current status: whatever a future reader (another agent, or janhavi) needs to work with the data there, without hunting for it elsewhere.
+
+- **Read** a folder's `CLAUDE.md` first when you start working in it.
+- **Create or update** it whenever you add data to a folder or learn something about its contents the next reader will need. The context travels *with* the data, not in a distant index.
+- This is distinct from the handoff README below: the README narrates *the work you did* this run; the `CLAUDE.md` is the *standing context for the data* in the folder. For a small folder the two can be the same file — but the rule is that anything a reader needs about the folder's contents must be findable in that folder's `CLAUDE.md`.
+
+---
+
 ## Write a handoff README
 
 Whenever you do real work, write or update a `README.md` in the **topmost folder you created or worked in** (e.g. the new experiment dir, the new drafts dir). If you only touched files at the project root, put it there. One README is enough — don't drop one in every subfolder. Cover:

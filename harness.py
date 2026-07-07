@@ -44,6 +44,7 @@ STATE_TMP = HARNESS_DIR / ".state.json.tmp"
 LOG_FILE = HARNESS_DIR / "log.jsonl"
 PID_FILE = HARNESS_DIR / "harness.pid"
 PENDING_TASKS_DIR = HARNESS_DIR / "pending_tasks"
+SOUL_FILE = MEMORY_DIR / "soul.md"   # joint permanent principles; prepended to every system prompt
 INBOX_DIR = HARNESS_DIR / "inbox"
 INBOX_PRUNE_AGE_DAYS = 7
 
@@ -54,6 +55,7 @@ WATCHER_STATE_DIR = HARNESS_DIR / "watcher_state"
 WATCHERS_DIR = BASE_DIR / "tools" / "watchers"
 TRACK_APPEND = BASE_DIR / "tools" / "track_append.py"
 USAGE_LOG = MEMORY_DIR / "projects" / "bismuth" / "usage_log.jsonl"
+TRANSCRIPTS_DIR = MEMORY_DIR / "projects" / "bismuth" / "transcripts"
 
 
 # ─── Tunables ────────────────────────────────────────────────────────────────
@@ -915,11 +917,13 @@ def read_mailbox(state: dict) -> list[str]:
             synthetic.append(f"[executor #{short} for {project}]: DONE — {summary}")
             info["result_relayed"] = True
             info["status"] = "done"
+            _log_executor_usage(exec_dir, uid, info.get("task_id", "unknown"), "done")
 
         elif status == "failed" and not info.get("result_relayed"):
             synthetic.append(f"[executor #{short} for {project}]: FAILED — check {exec_dir}/stderr.log")
             info["result_relayed"] = True
             info["status"] = "failed"
+            _log_executor_usage(exec_dir, uid, info.get("task_id", "unknown"), "failed")
 
         # An answer written after the executor finished was never seen by it.
         if (status in ("done", "failed") and ans.exists()
@@ -966,12 +970,29 @@ def _load_skills(skills_dir: Path) -> str:
     return SKILL_SEPARATOR.join(parts)
 
 
+def _load_soul() -> str:
+    """The joint soul: permanent principles, loaded into every system prompt.
+    Returns '' if the file is missing. Placed at the very front of the prompt
+    (the most stable position) so it rides the system-prompt cache: the claude
+    CLI auto-caches tools+system, and stable-content-first is the cache-optimal
+    ordering — soul.md only invalidates the cache on the rare edits to it."""
+    try:
+        return SOUL_FILE.read_text()
+    except FileNotFoundError:
+        return ""
+    except Exception as e:
+        log_event("soul_load_error", error=str(e))
+        return ""
+
+
 def build_prompt(agent_name: str) -> str:
     prompts_dir = BASE_DIR / "prompts"
+    soul = _load_soul()
+    soul_prefix = soul + SKILL_SEPARATOR if soul else ""
     if agent_name == "assistant":
         base = (prompts_dir / "assistant.md").read_text()
         skills = _load_skills(prompts_dir / "skills" / "assistant")
-        full = base + (SKILL_SEPARATOR + skills if skills else "")
+        full = soul_prefix + base + (SKILL_SEPARATOR + skills if skills else "")
         return _substitute(full)
     if agent_name.startswith("coffeechat:"):
         project = agent_name.split(":", 1)[1]
@@ -979,7 +1000,7 @@ def build_prompt(agent_name: str) -> str:
         global_skills = _load_skills(prompts_dir / "skills" / "coffeechat")
         project_skills = _load_skills(MEMORY_DIR / "projects" / project / "skills")
         extras = SKILL_SEPARATOR.join(s for s in (global_skills, project_skills) if s)
-        full = base + (SKILL_SEPARATOR + extras if extras else "")
+        full = soul_prefix + base + (SKILL_SEPARATOR + extras if extras else "")
         return _substitute(full, project=project)
     raise ValueError(f"unknown agent: {agent_name}")
 
@@ -1068,6 +1089,49 @@ def append_usage_log(agent_name: str, result_obj: dict | None,
         log_event("usage_log_write_error", error=str(e))
 
 
+def append_transcript(agent_name: str, session_id: str, stdout: str,
+                      user_msg: str | None = None):
+    """Persist the full stream-json event stream — the exact input sent to the
+    model, every assistant message, every tool call with its input params, and
+    every tool result — to a daily JSONL under projects/bismuth/transcripts/.
+    Python-owned: agents never write here."""
+    try:
+        TRANSCRIPTS_DIR.mkdir(parents=True, exist_ok=True)
+        path = TRANSCRIPTS_DIR / f"{datetime.now():%Y-%m-%d}.jsonl"
+        envelope = {"ts": datetime.now().isoformat(), "agent": agent_name,
+                    "session_id": session_id}
+        with open(path, "a") as f:
+            if user_msg is not None:
+                f.write(json.dumps(
+                    {**envelope, "event": {"type": "harness_input",
+                                           "text": user_msg}}) + "\n")
+            for line in stdout.splitlines():
+                line = line.strip()
+                if not line.startswith("{"):
+                    continue
+                try:
+                    obj = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                f.write(json.dumps({**envelope, "event": obj}) + "\n")
+    except Exception as e:
+        log_event("transcript_write_error", error=str(e))
+
+
+def _log_executor_usage(exec_dir: Path, uid: str, task_id: str, status: str):
+    """Parse the executor's stream-json stdout.log for its final result line
+    and log token counts + cost. Called from the DONE/FAILED relay, which
+    runs exactly once per executor."""
+    try:
+        stdout = (exec_dir / "stdout.log").read_text()
+    except OSError:
+        stdout = ""
+    _, result_obj = _parse_stream_json(stdout)
+    append_usage_log(f"executor:{task_id}", result_obj,
+                     0 if status == "done" else 1, True, uid)
+    append_transcript(f"executor:{task_id}", uid, stdout)
+
+
 def run_agent(agent_name: str, batch: list[str], state: dict) -> tuple[str, int]:
     """One agent turn, with one retry: any failure (nonzero exit, timeout,
     lost session) gets a second attempt in a brand-new session. A fresh
@@ -1093,6 +1157,8 @@ def run_agent(agent_name: str, batch: list[str], state: dict) -> tuple[str, int]
     if result is not None:
         reply_text, result_obj = _parse_stream_json(result.stdout or "")
         append_usage_log(agent_name, result_obj, result.returncode, is_new, session_id)
+        append_transcript(agent_name, session_id, result.stdout or "",
+                          _format_batch(attempt_batch))
         if result.returncode == 0:
             touch_session(agent_name, state)
             log_event("agent_done", agent=agent_name, exit_code=0,
@@ -1123,6 +1189,8 @@ def run_agent(agent_name: str, batch: list[str], state: dict) -> tuple[str, int]
         return "", -1
     reply_text, result_obj = _parse_stream_json(result.stdout or "")
     append_usage_log(agent_name, result_obj, result.returncode, True, new_id)
+    append_transcript(agent_name, new_id, result.stdout or "",
+                      _format_batch([session_start_marker(agent_name)] + batch))
     if result.returncode == 0:
         touch_session(agent_name, state)
     log_event("agent_done", agent=agent_name, exit_code=result.returncode,
@@ -1191,6 +1259,7 @@ def spawn_executor(task_id: str, project: str, state: dict) -> bool:
         proc = subprocess.Popen(
             ["claude", "-p", user_msg,
              "--system-prompt", system,
+             "--output-format", "stream-json", "--verbose",
              "--dangerously-skip-permissions"],
             cwd=str(BASE_DIR),
             stdout=stdout_log,
