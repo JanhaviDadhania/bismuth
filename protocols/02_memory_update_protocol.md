@@ -100,6 +100,8 @@ If it belongs to a project, Bismuth must add it to that project's `nexttodo.md`.
 
 If it does not belong to a project, Bismuth must add it to home `nexttodo.md`.
 
+Tag each `nexttodo.md` entry: `@janhavi` if she will do it herself, `@agent` if an executor should do it later. `@agent` rows are consumed when she says "run my tasks" (see the Executor Delegation Protocol).
+
 If the action is small and should actually be executed now, executor delegation or tool use is handled by the relevant runtime protocol, not by this memory update protocol.
 
 Action Routing End
@@ -176,11 +178,13 @@ Summary Update End
 
 Tracking Boundary Start
 
-Bismuth must not write `tracking.md` as part of assistant memory update.
+The harness logs executor completions to `tracking.md` automatically.
 
-Tracking should be handled by independent Python/runtime code.
+When Bismuth itself completes a concrete action in a turn (created a project, generated something, moved a file, answered a non-trivial question), it must append one line to `tracking.md` via the locked `TRACK_APPEND` CLI — never by editing the file directly (concurrent writers can be erased by a direct edit).
 
-Assistant memory update should focus on routing durable information to the right living files.
+Format: `- [YYYY-MM-DD] <what was done> — <outcome / path if relevant>`, with `--project <name>` when project-scoped.
+
+Skip tracking for pure read-only replies and mood-only writes.
 
 Tracking Boundary End
 

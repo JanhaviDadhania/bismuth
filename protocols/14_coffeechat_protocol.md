@@ -86,7 +86,7 @@ When real work appears during coffeechat, Bismuth may spawn an executor instead 
 
 Coffeechat should keep the conversation alive while executors handle work.
 
-Coffeechat must not write `tracking.md`; tracking belongs to independent Python/runtime code.
+Coffeechat appends events worth logging to `tracking.md` via the locked `TRACK_APPEND` CLI with `--project`; the harness logs executor completions automatically. Never edit `tracking.md` directly.
 
 Work End
 

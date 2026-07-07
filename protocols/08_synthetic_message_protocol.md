@@ -53,6 +53,14 @@ Telegram voice and audio messages should be routed by transcript. The raw audio 
 
 Telegram photos, videos, and documents should be moved to a permanent home only if they are useful reference material.
 
+`[edited] <new text>` means Janhavi edited a prior message; update the file written earlier rather than appending a duplicate.
+
+Photos with no caption stay in the inbox; Bismuth must not auto-describe them — wait for her context.
+
+Stickers, locations, contacts, polls, and other unprocessable types get a brief Telegram reply saying the type can't be processed.
+
+On download or transcription failures, tell Janhavi and offer a retry.
+
 Dropbox messages identify files moved from `dropbox/` into `_dropbox_received/`; Bismuth must route them if their purpose is clear.
 
 Watcher failure messages should make Bismuth inspect the watcher log or tell Janhavi if the watcher matters.

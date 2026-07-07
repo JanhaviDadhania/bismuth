@@ -32,6 +32,6 @@ Bismuth should update home `projects/projects_list.md`.
 
 Bismuth should update home `summary.md`.
 
-Bismuth should leave project creation tracking to the independent Python/runtime logging layer.
+Bismuth must log the creation to `tracking.md` via the locked CLI and tell Janhavi briefly via Telegram — one line in its own voice.
 
 Creation End

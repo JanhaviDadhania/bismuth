@@ -166,13 +166,15 @@ def reset_session(agent_name: str, state: dict):
 
 
 SESSION_START_ASSISTANT = (
-    "[session start — read mood.md and second_order_thoughts.md once for context; "
+    "[session start — read summary.md (if present), mood.md and "
+    "second_order_thoughts.md once for context; "
     "you won't re-read them during this session]"
 )
 
 SESSION_START_COFFEECHAT = (
-    "[session start — read projects/{project}/vision.md, projects/{project}/nexttodo.md, "
-    "projects/{project}/reference/register.md (if it exists), projects/{project}/coffeechat/ "
+    "[session start — read projects/{project}/summary.md, projects/{project}/vision.md, "
+    "projects/{project}/nexttodo.md, projects/{project}/reference/summary.md "
+    "(if it exists), projects/{project}/coffeechat/ "
     "(if it exists), last few entries of mood.md, and second_order_thoughts.md once for "
     "context; you won't re-read them during this session]"
 )
@@ -918,6 +920,7 @@ def read_mailbox(state: dict) -> list[str]:
             info["result_relayed"] = True
             info["status"] = "done"
             _log_executor_usage(exec_dir, uid, info.get("task_id", "unknown"), "done")
+            _track_executor_done(project, info.get("task_id", "unknown"), summary)
 
         elif status == "failed" and not info.get("result_relayed"):
             synthetic.append(f"[executor #{short} for {project}]: FAILED — check {exec_dir}/stderr.log")
@@ -956,6 +959,36 @@ def _substitute(text: str, project: str = "general") -> str:
 
 SKILL_SEPARATOR = "\n\n---\n\n"
 
+PROTOCOLS_DIR = BASE_DIR / "protocols"
+
+# Which protocols each mode loads, in numeric order. Prompts carry identity
+# and judgment; protocols carry the exact contracts. Keep this map in sync
+# with protocols/00_index.md.
+PROTOCOLS_BY_MODE = {
+    "assistant":  ["01", "02", "03", "04", "05", "06", "07",
+                   "08", "09", "10", "12", "13", "16", "17"],
+    "coffeechat": ["01", "03", "04", "05", "06", "07", "08",
+                   "12", "14", "16", "17"],
+    "executor":   ["01", "04", "05", "07", "11"],
+}
+
+
+def _load_protocols(mode: str) -> str:
+    """Concatenate the protocol files for a mode, in numeric order.
+    Returns '' if the mode has no protocols or the dir is missing."""
+    parts = []
+    for prefix in PROTOCOLS_BY_MODE.get(mode, []):
+        matches = sorted(PROTOCOLS_DIR.glob(f"{prefix}_*.md"))
+        if not matches:
+            log_event("protocol_missing", mode=mode, prefix=prefix)
+            continue
+        for f in matches:
+            try:
+                parts.append(f.read_text())
+            except Exception as e:
+                log_event("protocol_load_error", file=str(f), error=str(e))
+    return SKILL_SEPARATOR.join(parts)
+
 
 def _load_skills(skills_dir: Path) -> str:
     """Concatenate sorted *.md files under skills_dir. Returns '' if dir missing or empty."""
@@ -991,16 +1024,18 @@ def build_prompt(agent_name: str) -> str:
     soul_prefix = soul + SKILL_SEPARATOR if soul else ""
     if agent_name == "assistant":
         base = (prompts_dir / "assistant.md").read_text()
+        protocols = _load_protocols("assistant")
         skills = _load_skills(prompts_dir / "skills" / "assistant")
-        full = soul_prefix + base + (SKILL_SEPARATOR + skills if skills else "")
+        full = SKILL_SEPARATOR.join(p for p in (soul, base, protocols, skills) if p)
         return _substitute(full)
     if agent_name.startswith("coffeechat:"):
         project = agent_name.split(":", 1)[1]
         base = (prompts_dir / "coffeechat.md").read_text()
+        protocols = _load_protocols("coffeechat")
         global_skills = _load_skills(prompts_dir / "skills" / "coffeechat")
         project_skills = _load_skills(MEMORY_DIR / "projects" / project / "skills")
-        extras = SKILL_SEPARATOR.join(s for s in (global_skills, project_skills) if s)
-        full = soul_prefix + base + (SKILL_SEPARATOR + extras if extras else "")
+        full = SKILL_SEPARATOR.join(
+            p for p in (soul, base, protocols, global_skills, project_skills) if p)
         return _substitute(full, project=project)
     raise ValueError(f"unknown agent: {agent_name}")
 
@@ -1132,6 +1167,19 @@ def _log_executor_usage(exec_dir: Path, uid: str, task_id: str, status: str):
     append_transcript(f"executor:{task_id}", uid, stdout)
 
 
+def _track_executor_done(project: str, task_id: str, summary: str):
+    """Runtime-owned tracking: log executor completions to tracking.md via the
+    locked append CLI, so agents don't have to log executor work themselves."""
+    entry = f"- [{datetime.now():%Y-%m-%d}] executor {task_id}: {summary[:200]}"
+    cmd = ["python3", str(TRACK_APPEND), str(MEMORY_DIR / "tracking.md"), entry]
+    if project and project != "general":
+        cmd += ["--project", project]
+    try:
+        subprocess.run(cmd, capture_output=True, timeout=10)
+    except Exception as e:
+        log_event("track_executor_error", error=str(e))
+
+
 def run_agent(agent_name: str, batch: list[str], state: dict) -> tuple[str, int]:
     """One agent turn, with one retry: any failure (nonzero exit, timeout,
     lost session) gets a second attempt in a brand-new session. A fresh
@@ -1245,11 +1293,12 @@ def spawn_executor(task_id: str, project: str, state: dict) -> bool:
     pending.unlink()
 
     template = (BASE_DIR / "prompts" / "executor.md").read_text()
-    system = (template
-              .replace("{MEMORY_DIR}", str(MEMORY_DIR))
-              .replace("{EXEC_DIR}", str(exec_dir))
-              .replace("{TRACK_APPEND}", str(TRACK_APPEND))
-              .replace("{PROJECT}", project))
+    protocols = _load_protocols("executor")
+    soul = _load_soul()
+    system = _substitute(
+        SKILL_SEPARATOR.join(p for p in (soul, template, protocols) if p),
+        project=project,
+    ).replace("{EXEC_DIR}", str(exec_dir))
 
     user_msg = f"Your task is in {exec_dir / 'task.md'}. Read it and begin."
 

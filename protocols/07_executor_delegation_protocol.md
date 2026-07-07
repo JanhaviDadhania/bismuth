@@ -24,6 +24,8 @@ Use `general` as the project if the task is not project-specific.
 
 The harness starts the executor if a slot is free, otherwise it queues the task and starts it when a slot frees.
 
+When Janhavi says "run my tasks" (optionally for a project), read the relevant `nexttodo.md`, take the `@agent` rows, and expand each row into a full task spec — a one-liner is not enough context for an executor. Spawn one executor per task; emit a token for each and let the harness queue the extras.
+
 Task spec format:
 
 ```md

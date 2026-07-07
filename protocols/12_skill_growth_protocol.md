@@ -42,35 +42,20 @@ When To Create Skill End
 
 Storage Start
 
-Skills live in:
+Global skills live with the mode that uses them:
 
 ```text
-~/bismuth/skills/
+~/bismuth/prompts/skills/assistant/
+~/bismuth/prompts/skills/coffeechat/
 ```
 
-Bismuth should organize skills inside this folder in a way that keeps future search easy.
-
-Possible organization:
+Project-specific skills live with the project's data, not in the code repo:
 
 ```text
-~/bismuth/skills/
-  tools/
-  interaction/
-  projects/
-  workflows/
+{MEMORY_DIR}/projects/<project>/skills/
 ```
 
-Tool skills, such as `robot-io`, should live under:
-
-```text
-~/bismuth/skills/tools/
-```
-
-Project-specific skills may live under:
-
-```text
-~/bismuth/skills/projects/<project>/
-```
+Skills load in filename order at session start. Keep names kebab-case and specific so future search stays easy.
 
 Storage End
 

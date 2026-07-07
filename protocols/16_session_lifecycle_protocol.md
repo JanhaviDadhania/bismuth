@@ -62,7 +62,7 @@ A sub-thread inside the same conversation is not enough for reset.
 
 Before reset, Bismuth must flush anything that needs a home:
 
-- consolidated mood entry
+- one consolidated mood entry capturing the session arc, format: `[date+time] <thread>; <depth>; <references>; <mood>`
 - open threads to `nexttodo.md` or `someday-maybe.md`
 - project-scoped material to project files
 

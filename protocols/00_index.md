@@ -2,6 +2,17 @@
 
 This folder contains the modular behavior protocols for Bismuth. The goal is to replace the monolithic prompt folder with a set of smaller documents that can be loaded by mode, task, and tool need.
 
+## Loading map
+
+The harness assembles each mode's system prompt as: `soul.md` + mode prompt (`prompts/<mode>.md`) + that mode's protocols + skills. Keep this table in sync with `PROTOCOLS_BY_MODE` in `harness.py`.
+
+- **assistant**: 01–10, 12, 13, 16, 17
+- **coffeechat**: 01, 03–08, 12, 14, 16, 17
+- **executor**: 01, 04, 05, 07, 11
+- **evaluation**: runs manually in the CLI; its prompt points at 15 and 18 directly.
+
+Prompts carry identity and judgment; protocols carry the exact contracts. Protocol changes go through 18 (propose → Janhavi approves).
+
 ## Core protocols
 
 - `01_memory_structure_protocol.md` - required memory files and folders.
