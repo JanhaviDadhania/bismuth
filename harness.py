@@ -1022,11 +1022,13 @@ def build_prompt(agent_name: str) -> str:
     prompts_dir = BASE_DIR / "prompts"
     soul = _load_soul()
     soul_prefix = soul + SKILL_SEPARATOR if soul else ""
+    shared_skills = _load_skills(prompts_dir / "skills" / "shared")
     if agent_name == "assistant":
         base = (prompts_dir / "assistant.md").read_text()
         protocols = _load_protocols("assistant")
         skills = _load_skills(prompts_dir / "skills" / "assistant")
-        full = SKILL_SEPARATOR.join(p for p in (soul, base, protocols, skills) if p)
+        full = SKILL_SEPARATOR.join(
+            p for p in (soul, base, protocols, shared_skills, skills) if p)
         return _substitute(full)
     if agent_name.startswith("coffeechat:"):
         project = agent_name.split(":", 1)[1]
@@ -1035,7 +1037,8 @@ def build_prompt(agent_name: str) -> str:
         global_skills = _load_skills(prompts_dir / "skills" / "coffeechat")
         project_skills = _load_skills(MEMORY_DIR / "projects" / project / "skills")
         full = SKILL_SEPARATOR.join(
-            p for p in (soul, base, protocols, global_skills, project_skills) if p)
+            p for p in (soul, base, protocols, shared_skills,
+                        global_skills, project_skills) if p)
         return _substitute(full, project=project)
     raise ValueError(f"unknown agent: {agent_name}")
 
