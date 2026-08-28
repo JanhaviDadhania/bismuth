@@ -82,8 +82,11 @@ INLINE_VIDEO_MAX_BYTES = 8 * 1024 * 1024
 # Embed a note's full text for the expand overlay only up to this size.
 FULL_NOTE_MAX_CHARS = 60_000
 PREVIEW_CHARS = 620
-# A folder with more eligible files than this collapses to one card.
-DEFAULT_MAX_DIR_FILES = 60
+# A folder with more eligible files than this collapses to one card that
+# lists the file names instead of pinning a card per file.
+DEFAULT_MAX_DIR_FILES = 40
+# Even a listing has to stop somewhere; the overflow is stated on the card.
+FOLDER_LIST_MAX = 60
 
 
 # ------------------------------------------------------------------- geometry
@@ -247,7 +250,7 @@ def _collect(project_dir: Path, root: Path, max_dir_files: int,
                 cid=_cid(str(d)), kind="folder", title=d.name + "/",
                 subpath=Path(subpath).parent.as_posix().replace(".", ""),
                 href=_rel_href(d, root), meta=f"{len(files)} files",
-                preview="Folder — too many files to pin individually. Click to open.",
+                items=[{"n": f.name, "h": _rel_href(f, root)} for f in files],
             ))
             return
 
@@ -379,7 +382,11 @@ def _card_height(c: Card) -> int:
         return 54 + 22 + 16 + 20
     if c.kind in ("file",):
         return 88
-    if c.kind in ("repo", "folder"):
+    if c.kind == "folder":
+        shown = min(len(c.items), FOLDER_LIST_MAX)
+        overflow = 1 if len(c.items) > FOLDER_LIST_MAX else 0
+        return 22 + (16 if c.subpath else 0) + 26 + (shown + overflow) * 16
+    if c.kind == "repo":
         return 104
     if c.kind == "month":
         return 30 + 18 + 22 * len(c.items) + 22
@@ -528,6 +535,11 @@ html, body { margin:0; height:100%; overflow:hidden;
 .card .kind { position:absolute; top:9px; right:10px; font-size:9px;
   text-transform:uppercase; letter-spacing:.6px; color:#b8b8ae; }
 
+.card.folder .flist { display:flex; flex-direction:column; margin-top:2px; }
+.card.folder a.fn { font-size:11px; line-height:16px; color:#4a5a7a; text-decoration:none;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.card.folder a.fn:hover { text-decoration:underline; }
+.card.folder .fmore { font-size:10.5px; line-height:16px; color:#9a9a90; }
 .card.empty { background:#fafaf6; border-style:dashed; border-color:#e0e0d6;
   box-shadow:none; color:#a8a89e; }
 .card.month { background:#fffdf6; border-color:#e8dcc0; }
@@ -599,6 +611,16 @@ def _card_html(c: Card) -> str:
             for i in c.items
         )
         inner = f'<div class="t">{_esc(c.title)}</div>{rows}'
+    elif c.kind == "folder":
+        kind_badge = f'<div class="kind">{_esc(c.meta)}</div>'
+        rows = "".join(
+            f'<a class="fn" href="{i["h"]}" target="_blank">{_esc(i["n"])}</a>'
+            for i in c.items[:FOLDER_LIST_MAX]
+        )
+        if len(c.items) > FOLDER_LIST_MAX:
+            rows += (f'<div class="fmore">+{len(c.items) - FOLDER_LIST_MAX} more — '
+                     f'open the folder</div>')
+        inner = f'<div class="t">{_esc(c.title)}</div>{tag}<div class="flist">{rows}</div>'
     elif c.kind == "empty":
         inner = f'<div class="t">{_esc(c.title)}</div><div class="p">{_esc(c.preview)}</div>'
     else:  # file | repo | folder
@@ -611,7 +633,8 @@ def _card_html(c: Card) -> str:
 
     data = f' data-href="{c.href}"' if c.href else ""
     full = ' data-full="1"' if c.full else ""
-    search = _esc(f"{c.title} {c.subpath} {c.preview}".lower())
+    names = " ".join(i.get("n", "") for i in c.items) if c.kind == "folder" else ""
+    search = _esc(f"{c.title} {c.subpath} {c.preview} {names}".lower())
     return (f'<div class="card {c.kind}" id="c{c.cid}" style="{style}"'
             f'{data}{full} data-s="{search}">{kind_badge}{inner}</div>')
 
@@ -713,8 +736,9 @@ cards.forEach((el) => {
     el.classList.add('dragging');
   });
   el.addEventListener('click', (e) => {
-    if (drag && drag.moved) return;
+    if (drag && drag.moved) { e.preventDefault(); return; }
     if (e.target.closest('video, audio')) return;
+    if (e.target.closest('a')) return;          // a filename link opens itself
     if (el.dataset.full) openSheet(el);
     else if (el.dataset.href) window.open(el.dataset.href, '_blank');
   });

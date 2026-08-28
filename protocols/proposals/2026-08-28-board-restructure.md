@@ -37,8 +37,10 @@ infinite canvas. Current run: **542 cards, 25 groups, 2.1 MB, no dependencies be
 - **Nested git repos collapse to one card.** Six do today (`novel/quartz`,
   `benchmark/theagentcompany`, the three `autoresearch` clones, `unicorn-bench`). Otherwise
   they alone would contribute thousands of cards.
-- **Any folder over 60 files collapses to one card**, and the CLI *prints every collapse* — a
-  cap that is hidden reads as "the board shows everything" when it does not.
+- **Any folder over 40 files collapses to one card listing its file names** (each name a link),
+  rather than a card per file. The CLI *prints every collapse* — a cap that is hidden reads as
+  "the board shows everything" when it does not. Nothing in the tree hits this today; the
+  biggest non-repo folder is `projects/artifacts/content/assets` at 44 files.
 - **Layout is deterministic, and landscape by construction.** Same tree → same board, so cards
   never reshuffle under her between runs. Group column counts and the board width are chosen to
   pack close to a 1.8 aspect; the first attempt was a 6%-zoom vertical ribbon.

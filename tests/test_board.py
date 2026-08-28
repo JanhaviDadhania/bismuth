@@ -83,6 +83,31 @@ class TestCollapsing(BoardTestCase):
         # A cap that is not reported reads as "everything is on the board".
         self.assertEqual(r["collapsed"][0]["why"], "large folder")
 
+    def test_collapsed_folder_lists_its_file_names_as_links(self):
+        p = self.mem / "projects" / "alpha"
+        for i in range(8):
+            write(p / "shots" / f"shot_{i}.png", "img")
+        r = self.build(max_dir_files=5)
+        self.assertEqual(r["cards"], 1)
+        html = (self.mem / "board.html").read_text()
+        # every trimmed file is still named on the board, and clickable
+        for i in range(8):
+            self.assertIn(f'>shot_{i}.png</a>', html)
+            self.assertIn(f'href="projects/alpha/shots/shot_{i}.png"', html)
+        # and findable by the filter box
+        self.assertIn("shot_3.png", re.search(r'data-s="([^"]*)"', html).group(1))
+
+    def test_listing_overflow_is_stated_on_the_card(self):
+        p = self.mem / "projects" / "alpha"
+        for i in range(board.FOLDER_LIST_MAX + 7):
+            write(p / "dump" / f"f_{i:03}.md", "x")
+        self.build(max_dir_files=5)
+        html = (self.mem / "board.html").read_text()
+        self.assertIn("+7 more", html)
+
+    def test_default_cap_is_forty(self):
+        self.assertEqual(board.DEFAULT_MAX_DIR_FILES, 40)
+
     def test_folder_at_the_limit_is_not_collapsed(self):
         p = self.mem / "projects" / "alpha"
         for i in range(5):
