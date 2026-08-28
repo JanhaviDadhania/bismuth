@@ -40,3 +40,4 @@ Prompts carry identity and judgment; protocols carry the exact contracts. Protoc
 - `17_bismuth_janhavi_image_thinking_protocol.md` - thinking with Janhavi in images and drawings.
 - `18_protocol_update_protocol.md` - how Bismuth proposes changes to its own protocols.
 - `19_executor_operating_protocol.md` - how a worker agent does its task: work rules, mailbox, finishing.
+- `20_bismuth_janhavi_optimal_talking_style_protocol.md` - (empty placeholder, content TBD).

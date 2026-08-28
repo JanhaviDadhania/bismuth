@@ -32,6 +32,7 @@ On startup, evaluator should read:
 - project `nexttodo.md` files
 - last 1 or 2 entries in `evaluation/`
 - `projects/bismuth/usage_log.jsonl` for the past 7 days — per-turn token counts and cost (`total_cost_usd`), written by the harness for every agent turn and every executor run; use it for spend and usage metrics in Bismuth's half
+- `.harness/log.jsonl` for the past 7 days — harness events. Count failures by type: `agent_timeout`, `agent_retry_fresh`, `agent_retry_timeout`, `session_lost`, `batch_dead_lettered`, `executor_died`, `spawn_failed_no_task`, `context_alert`, watcher crashes. Anything recurring is observed friction — raise it in Bismuth's half and consider a protocol proposal for it. A quiet log is worth naming too.
 - when reading usage or transcript logs, read only the head of each row (type, agent, tool name, counts) — never full tool outputs or message bodies; prefer `tools/usage_report.py` for aggregate metrics
 
 After reading, evaluator should open with a small contact statement naming the shape of the week.

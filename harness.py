@@ -63,7 +63,13 @@ TRANSCRIPTS_DIR = MEMORY_DIR / "projects" / "bismuth" / "transcripts"
 EXECUTOR_CAP = 3
 LONG_POLL_TIMEOUT = 50      # seconds — Telegram thread holds the connection this long
 MAIN_TICK = 1.0             # seconds — main loop max idle wait between mailbox/buffer checks
-AGENT_TIMEOUT = 600
+AGENT_TIMEOUT = 180  # 3 min per conversational turn — long work belongs in executors
+TIMEOUT_NOTICE = (
+    "[system] Your previous turn was killed at the 3-minute limit. Do not do "
+    "long-running work inline — spawn an executor and reply short. If the work "
+    "truly cannot be delegated, continue now, but be quick."
+)
+CONTEXT_ALERT_TOKENS = 120_000  # inject a [context] notice past this; agent decides (protocol 04)
 TRANSCRIBE_TIMEOUT = 300
 TELEGRAM_API = "https://api.telegram.org/bot{token}/{method}"
 POLLER_BACKOFF_MAX = 60     # seconds — cap for exponential backoff on telegram errors
@@ -1056,19 +1062,19 @@ def _format_batch(batch: list[str]) -> str:
 
 
 def _invoke_claude(user_msg: str, system: str, session_id: str, is_new: bool):
-    """One claude subprocess call. New sessions create with --session-id and
-    receive the system prompt; resumed sessions use --resume and inherit the
-    prompt baked in at creation time.
+    """One claude subprocess call. The system prompt is passed on EVERY call,
+    new or resumed, so protocol and skill edits apply on the next turn instead
+    of waiting for a session reset.
 
     Uses --output-format stream-json so the final result line carries token
     counts and total_cost_usd — we parse those out for usage_log.jsonl and
     surface api_error_status on failure (it's stdout in this mode, not stderr)."""
-    common = ["--output-format", "stream-json", "--verbose",
+    common = ["--system-prompt", system,
+              "--output-format", "stream-json", "--verbose",
               "--dangerously-skip-permissions"]
     if is_new:
         cmd = ["claude", "-p", user_msg,
-               "--session-id", session_id,
-               "--system-prompt", system, *common]
+               "--session-id", session_id, *common]
     else:
         cmd = ["claude", "-p", user_msg,
                "--resume", session_id, *common]
@@ -1126,6 +1132,26 @@ def append_usage_log(agent_name: str, result_obj: dict | None,
             f.write(json.dumps(entry) + "\n")
     except Exception as e:
         log_event("usage_log_write_error", error=str(e))
+
+
+def _flag_context_growth(agent_name: str, result_obj: dict | None,
+                         session_id: str, state: dict):
+    """One-shot per session: when a turn's total input context passes
+    CONTEXT_ALERT_TOKENS, flag it in state. The main loop prepends a
+    [context] notice to the next batch; what to do about it is the agent's
+    call under the Context Management Protocol."""
+    usage = (result_obj or {}).get("usage") or {}
+    context_tokens = (usage.get("input_tokens", 0)
+                      + usage.get("cache_read_input_tokens", 0)
+                      + usage.get("cache_creation_input_tokens", 0))
+    if context_tokens < CONTEXT_ALERT_TOKENS:
+        return
+    if state.get("context_alerted_session") == session_id:
+        return
+    state["context_alerted_session"] = session_id
+    state["context_alert_tokens"] = context_tokens
+    log_event("context_alert", agent=agent_name, session=session_id,
+              context_tokens=context_tokens)
 
 
 def append_transcript(agent_name: str, session_id: str, stdout: str,
@@ -1200,9 +1226,11 @@ def run_agent(agent_name: str, batch: list[str], state: dict) -> tuple[str, int]
               session=session_id, new_session=is_new)
 
     result = None
+    timed_out = False
     try:
         result = _invoke_claude(_format_batch(attempt_batch), system, session_id, is_new)
     except subprocess.TimeoutExpired:
+        timed_out = True
         log_event("agent_timeout", agent=agent_name, session=session_id)
         append_usage_log(agent_name, None, -1, is_new, session_id)
 
@@ -1213,6 +1241,7 @@ def run_agent(agent_name: str, batch: list[str], state: dict) -> tuple[str, int]
                           _format_batch(attempt_batch))
         if result.returncode == 0:
             touch_session(agent_name, state)
+            _flag_context_growth(agent_name, result_obj, session_id, state)
             log_event("agent_done", agent=agent_name, exit_code=0,
                       cost_usd=(result_obj or {}).get("total_cost_usd"))
             return reply_text, 0
@@ -1226,15 +1255,39 @@ def run_agent(agent_name: str, batch: list[str], state: dict) -> tuple[str, int]
                       stderr_tail=(result.stderr or "")[-300:],
                       stdout_tail=(result.stdout or "")[-300:])
 
+    if timed_out and not is_new:
+        # Timeout on a live session: keep the session — its context is worth
+        # more than a clean slate. Tell the agent why the turn died and give
+        # it one more window to delegate and reply short.
+        log_event("agent_retry_timeout", agent=agent_name, session=session_id)
+        retry_batch = [TIMEOUT_NOTICE] + batch
+        try:
+            result = _invoke_claude(_format_batch(retry_batch), system,
+                                    session_id, False)
+        except subprocess.TimeoutExpired:
+            log_event("agent_timeout", agent=agent_name, session=session_id)
+            append_usage_log(agent_name, None, -1, False, session_id)
+            return "", -1
+        reply_text, result_obj = _parse_stream_json(result.stdout or "")
+        append_usage_log(agent_name, result_obj, result.returncode, False, session_id)
+        append_transcript(agent_name, session_id, result.stdout or "",
+                          _format_batch(retry_batch))
+        if result.returncode == 0:
+            touch_session(agent_name, state)
+            _flag_context_growth(agent_name, result_obj, session_id, state)
+        log_event("agent_done", agent=agent_name, exit_code=result.returncode,
+                  cost_usd=(result_obj or {}).get("total_cost_usd"))
+        return reply_text, result.returncode
+
     # Retry once with a fresh session.
     reset_session(agent_name, state)
     new_id, _ = get_or_create_session(agent_name, state)
     log_event("agent_retry_fresh", agent=agent_name, session=new_id)
+    fresh_batch = ([session_start_marker(agent_name)]
+                   + ([TIMEOUT_NOTICE] if timed_out else [])
+                   + batch)
     try:
-        result = _invoke_claude(
-            _format_batch([session_start_marker(agent_name)] + batch),
-            system, new_id, True,
-        )
+        result = _invoke_claude(_format_batch(fresh_batch), system, new_id, True)
     except subprocess.TimeoutExpired:
         log_event("agent_timeout", agent=agent_name, session=new_id)
         append_usage_log(agent_name, None, -1, True, new_id)
@@ -1242,9 +1295,10 @@ def run_agent(agent_name: str, batch: list[str], state: dict) -> tuple[str, int]
     reply_text, result_obj = _parse_stream_json(result.stdout or "")
     append_usage_log(agent_name, result_obj, result.returncode, True, new_id)
     append_transcript(agent_name, new_id, result.stdout or "",
-                      _format_batch([session_start_marker(agent_name)] + batch))
+                      _format_batch(fresh_batch))
     if result.returncode == 0:
         touch_session(agent_name, state)
+        _flag_context_growth(agent_name, result_obj, new_id, state)
     log_event("agent_done", agent=agent_name, exit_code=result.returncode,
               cost_usd=(result_obj or {}).get("total_cost_usd"))
     return reply_text, result.returncode
@@ -1613,6 +1667,16 @@ def main():
                 if not batch:
                     write_state(state)
                     continue
+
+                alert_tokens = state.pop("context_alert_tokens", None)
+                if alert_tokens:
+                    batch = [
+                        f"[context] this session is holding ~{alert_tokens // 1000}k "
+                        f"tokens of context. Take a call per the Context Management "
+                        f"Protocol: flush what needs a home into files and "
+                        f"RESET_SESSION, or finish the live thought first — "
+                        f"then flush and reset. Do not ignore this."
+                    ] + batch
 
                 stdout, code = run_agent(state["active_agent"], batch, state)
                 consumed = ([p for _, p in inbox_entries]

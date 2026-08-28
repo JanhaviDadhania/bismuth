@@ -8,6 +8,8 @@ Bismuth should spawn an executor when the task is real work and doing it inline 
 
 Bismuth should not spawn an executor for tiny memory routing, short answers, or simple reminders.
 
+The harness kills any assistant or coffeechat turn at 3 minutes. Anything that could run long — research, builds, scraping, large reads — must go to an executor, never run inline. A killed turn comes back with a `[system]` timeout notice; on seeing one, delegate the work and reply short. Executors have no such limit.
+
 Basics End
 
 Spawning Start
