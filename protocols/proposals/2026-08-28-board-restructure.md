@@ -70,40 +70,38 @@ the switching logic and session marker in `harness.py` — code only, no content
 while writing the slim harness, not before. The generator does not care either way — it walks
 whatever is there.
 
-## Feasibility verdict
+## Feasibility verdict — nothing outstanding
 
-Everything she asked for is feasible; the interface half is already done.
+Everything she asked for is feasible, and the interface half was already done.
 
 - **Voice in / text back over Telegram: already works.** `harness.py` downloads voice and audio
   messages and runs them through `tools/transcribe.py` (faster-whisper, on-laptop). Zero work
   for v1. The iPhone app can wait behind it without blocking anything.
-- **The board: done**, subject to the two caveats below.
+- **The board: done.** The three caveats raised while building it were all reviewed and closed
+  by janhavi on 2026-08-28. Do not reopen them without her saying so.
 
-### Caveat A — the board cannot write back to memory  ⚠️
+### Closed — the board deliberately cannot write back to memory
 
-`board.html` is a static file opened over `file://`. It can *read* the memory tree, so dragging
-a card persists in that browser's `localStorage` and survives reloads — but it cannot write into
-`bismuth-memory/`. So hand-placed positions are **per-browser and invisible to Bismuth**, and a
-new browser or cleared storage resets to the generated layout.
+`board.html` is a static file over `file://`: it reads the memory tree and never writes to it.
+Dragging a card persists in that browser's `localStorage`, so it survives reloads but is
+per-browser and invisible to Bismuth.
 
-If she wants the board to be a real desk — arrange it once, Bismuth respects the arrangement,
-positions committed to memory — that needs a tiny local server (~40 lines, `http.server`
-POSTing a `board_layout.json`) instead of a bare file. Worth doing only if she finds herself
-rearranging; the generated layout may be enough. This is also the fork in the road toward the
-Mac app she floated.
+**Janhavi's call: this is the feature, not the limitation.** The board is a view; memory stays
+the single source of truth. **Do not build the local-server write-back path.** If a Mac app
+happens later it inherits the same rule — the canvas does not own state.
 
-### Caveat B — 542 cards means the zoomed-out board is a map, not a text you can read
+### Closed — unreadable at full zoom-out is fine
 
 Zoom-to-fit lands around 8–12%: section labels and group tints read fine, card text does not.
-She predicted this ("maybe trim the details and then ask me to click on it to expand"). v1 shows
-everything, per her instruction for version one. The obvious next step, when she has looked at
-it: collapse each group to its spine cards plus a `+N more` chip that expands on click.
+Clicking a card expands it, which is the interaction she wants.
 
-### Caveat C — voice is now the primary interface, and the transcription model is the weak link
+**Janhavi's call: fine as is.** No per-group collapse, no `+N more` trimming, no detail-level
+switching. The whole board stays visible at once and she zooms or clicks for detail.
 
-`transcribe.py` defaults to faster-whisper **`base`**. On her own 8-minute dictation it produced
-"many projects" for *mini projects*, "excalator" for *Excalidraw*, "MAT app" for *Mac app*, and
-"next to do" for *nexttodo* — every one a term this system depends on. That was survivable
-because a human read the transcript. For a voice-first Bismuth acting on what it hears, it is
-not. Recommend defaulting to `small` (or `medium`), and adding a short domain vocabulary of
-her recurring terms. Cheap change, large correctness gain.
+### Closed — the transcription model stays on `base`
+
+`transcribe.py` defaults to faster-whisper `base`. On her 8-minute dictation it mangled terms
+this system runs on ("many projects" for *mini projects*, "excalator" for *Excalidraw*).
+
+**Janhavi's call: good enough, leave it.** Do not bump the model size or add a domain vocabulary
+unless real misreads start causing wrong actions.
