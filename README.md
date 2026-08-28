@@ -64,7 +64,7 @@ bismuth-memory/
 
 Runtime scratch (state, executor mailboxes, logs) lives under `~/bismuth-memory/.harness/`.
 
-Design docs: `docs/v2/V2_PLAN.md`, `docs/v2/HARNESS_DESIGN.md`, `docs/v2/MEMORY_RESTRUCTURE_STEPS.md`. Smoke test corpus: `TESTS.md`.
+Design docs: `docs/v1/V2_PLAN.md`, `docs/v1/HARNESS_DESIGN.md`, `docs/v1/MEMORY_RESTRUCTURE_STEPS.md`. Smoke test corpus: `TESTS.md`.
 
 ## Setup
 

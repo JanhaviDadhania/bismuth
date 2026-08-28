@@ -9,7 +9,7 @@ Owns:
   - State persistence (memory/.harness/state.json)
   - Calendar polling stub (1-hour timer; calendar tool TBD)
 
-Design doc: docs/v2/HARNESS_DESIGN.md
+Design doc: docs/v1/HARNESS_DESIGN.md
 """
 
 from __future__ import annotations
