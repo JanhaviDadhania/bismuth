@@ -6,8 +6,8 @@ re-ask for, re-read, and scroll past. Chat is append-only, so nothing can be *se
 The fix is a board — one infinite canvas holding everything she and Bismuth are working on —
 and a much smaller Bismuth around it.
 
-Built on branch `board`: `tools/board.py`. Everything below the "Plan" heading is *not* built yet
-and needs her go-ahead, because two items break existing contracts.
+Built on branch `board`: `tools/board.py`. The board and the merged next-todo panel are done.
+The coffeechat removal from the harness is not — that lands with the slim harness.
 
 ---
 
@@ -22,7 +22,8 @@ infinite canvas. Current run: **542 cards, 25 groups, 2.1 MB, no dependencies be
   images render inline; short videos play inline; **long videos, big files, cloned repos and
   oversized folders become clickable links, never embedded payloads** — as instructed.
 - Reminders render from `reminders.md` as month cards, colour-coded fired / overdue / today /
-  future. The text file stays the source of truth; the board is only a view of it.
+  future, merged into one panel with the home next todos. The text files stay the source of
+  truth; the board is only a view of them.
 - Pan, zoom-at-cursor, filter box, and drag-to-re-pin any card.
 
 ### Decisions made while building (implementation details, not open questions)
@@ -48,47 +49,26 @@ infinite canvas. Current run: **542 cards, 25 groups, 2.1 MB, no dependencies be
 
 ---
 
-## Plan: what to remove
+## Decided (janhavi, 2026-08-28) — no memory restructuring
 
-### 1. `nexttodo.md` — removing it breaks how background work is launched  ⚠️
+**Next todos stay, exactly as they are.** Both `@janhavi` and `@agent` rows, home and per-project.
+This closes the one item that would have broken a contract: `nexttodo.md` remains the executor's
+input queue, so "run my tasks" keeps working untouched.
 
-She said she never really used next-todos, so drop them. The catch: `nexttodo.md` is not only a
-list, it is **the executor's input queue**. Protocol 07 says "run my tasks" reads the relevant
-`nexttodo.md`, takes the `@agent` rows, and spawns one executor per row. Delete the file and
-that entry point has no source — Bismuth keeps the ability to *do* background work but loses
-the way she *hands it over*.
+- Project and miniproject `nexttodo.md` files ride along with their own group on the board,
+  as spine cards. Already the case.
+- **Home `nexttodo.md` is merged with reminders into one panel** — section `NEXT TODO &
+  REMINDERS`, one card per heading in the file, each row showing an owner chip (`janhavi` /
+  `agent`) and struck through when done. Built.
 
-Three ways out, her pick:
-- **(a)** Drop `@janhavi` rows only; keep a minimal `tasks.md` of `@agent` rows as the queue.
-- **(b)** Drop the file entirely and delegate purely conversationally ("run X for project Y").
-  Loses the "run my tasks" batch.
-- **(c)** Make the board the queue — a task card per pending job, since the board is the surface
-  she will actually be looking at.
+**Coffeechat: remove the mode from the harness, leave the memory alone.** Every
+`projects/*/coffeechat/` folder stays exactly as it is and keeps showing up as ordinary cards on
+the board. The removal is `prompts/coffeechat.md`, protocols 06 + 14, `PROTOCOLS_BY_MODE`, and
+the switching logic and session marker in `harness.py` — code only, no content touched.
 
-Touches: protocols 01, 02, 07, 13, 15, 16, 19, and `harness.py`'s coffeechat session marker.
-
-### 2. Coffeechat mode — remove the mode, keep the material
-
-Coffeechat is a wired mode: `prompts/coffeechat.md`, protocols 06 + 14, `PROTOCOLS_BY_MODE`,
-its own session marker and switching logic in `harness.py`. Removing it is mechanical.
-
-**But `projects/*/coffeechat/` folders hold real content** (`brainstorm.md`, `definition.md`,
-`outcome.md`). Plan: delete the *mode*, leave every folder and file alone — they become ordinary
-cards on the board. Nothing she has thought through gets thrown away.
-
-### 3. "No planning mode" — nothing to delete
-
-There is no planning mode in the code; the modes are assistant, coffeechat, executor, plus
-evaluation loaded by hand. Reading this as "no planning ceremony": the `plans/` folders inside
-projects are just reference material and stay as cards. If she meant something else, it is a
-one-line correction.
-
-### 4. Keep
-
-Reminders (text file + board view), projects, miniprojects, executors, the memory tree,
-voice-in over Telegram.
-
----
+**No restructuring of `bismuth-memory` for now.** How the tree should be shaped gets decided
+while writing the slim harness, not before. The generator does not care either way — it walks
+whatever is there.
 
 ## Feasibility verdict
 

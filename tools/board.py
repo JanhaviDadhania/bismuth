@@ -126,8 +126,9 @@ class Card:
 class Group:
     gid: str
     title: str
-    kind: str            # project | miniproject | reminders
+    kind: str            # project | miniproject | now
     subtitle: str = ""
+    stats: dict = field(default_factory=dict)
     cards: list = field(default_factory=list)
     x: int = 0
     y: int = 0
@@ -297,6 +298,64 @@ def _collect(project_dir: Path, root: Path, max_dir_files: int,
     return cards
 
 
+# ------------------------------------------------------------------- next todo
+
+def _parse_todo(line: str):
+    """`- @who text`, optionally struck through with a `done [date]` trailer."""
+    body = line.strip()
+    if not body.startswith("- "):
+        return None
+    body = body[2:].strip()
+    if not body:
+        return None
+
+    done = False
+    m = re.match(r"^~~(.*?)~~.*$", body, re.S)
+    if m:
+        done, body = True, m.group(1).strip()
+
+    who = ""
+    m = re.match(r"^@(\w+)\s+(.*)$", body, re.S)
+    if m:
+        who, body = m.group(1), m.group(2)
+
+    text = _strip_markdown(body).strip()
+    return {"who": who, "text": text, "done": done} if text else None
+
+
+def _todo_cards(memory: Path) -> tuple[list, int]:
+    """Home nexttodo.md → one card per heading. Project nexttodos are left
+    alone; they already ride along with their own project group."""
+    path = memory / "nexttodo.md"
+    if not path.exists():
+        return [], 0
+
+    sections: list[tuple[str, list]] = []
+    for line in _read_text(path).splitlines():
+        heading = re.match(r"^(#{1,3})\s+(.*)$", line)
+        if heading:
+            sections.append((_strip_markdown(heading.group(2)).strip(), []))
+            continue
+        item = _parse_todo(line)
+        if item:
+            if not sections:
+                sections.append(("Next todo", []))
+            sections[-1][1].append(item)
+
+    cards, open_count = [], 0
+    href = _rel_href(path, memory)
+    for title, items in sections:
+        if not items:
+            continue
+        open_count += sum(1 for i in items if not i["done"])
+        card = Card(cid=_cid("todo:" + title), kind="todo", title=title,
+                    href=href, items=items,
+                    meta=f"{sum(1 for i in items if not i['done'])} open")
+        card.tilt = _tilt(card.cid)
+        cards.append(card)
+    return cards, open_count
+
+
 # -------------------------------------------------------------------- reminders
 
 REMINDER_DATE_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})\s*[—–-]\s*(.*)$", re.S)
@@ -359,13 +418,13 @@ def _reminder_group(memory: Path, today: datetime.date) -> Group | None:
         label = datetime.date.fromisoformat(month + "-01").strftime("%B %Y")
         card = Card(cid=_cid("reminders:" + month), kind="month", title=label,
                     meta=f"{len(items)} reminder{'s' if len(items) != 1 else ''}",
-                    items=items)
+                    href=_rel_href(path, memory), items=items)
         card.tilt = _tilt(card.cid)
         cards.append(card)
 
-    return Group(gid="reminders", title="Reminders", kind="reminders",
+    return Group(gid="reminders", title="Reminders", kind="now",
                  subtitle=f"{pending} pending of {total} — from reminders.md",
-                 cards=cards)
+                 cards=cards, stats={"pending": pending, "total": total})
 
 
 # ----------------------------------------------------------------------- layout
@@ -390,6 +449,9 @@ def _card_height(c: Card) -> int:
         return 104
     if c.kind == "month":
         return 30 + 18 + 22 * len(c.items) + 22
+    if c.kind == "todo":
+        rows = sum(2 if len(i["text"]) > 30 else 1 for i in c.items)
+        return 30 + 18 + rows * 16 + len(c.items) * 6 + 20
     if c.kind == "empty":
         return 74
     return 100
@@ -410,7 +472,7 @@ def _pack(cards: list, columns: int) -> tuple[int, int]:
 
 def _layout_group(g: Group) -> None:
     n = max(1, len(g.cards))
-    if g.kind == "reminders":
+    if g.kind == "now":
         columns = min(4, n)
     else:
         # Aim for a roughly square group: card boxes are ~250x180, so the
@@ -498,7 +560,7 @@ html, body { margin:0; height:100%; overflow:hidden;
 .group { position:absolute; border:1.5px dashed #cfcfc4; border-radius:16px;
   background:rgba(255,255,255,.55); }
 .group.miniproject { border-style:dotted; background:rgba(250,250,244,.6); }
-.group.reminders { border-color:#c9b79a; background:rgba(255,251,240,.7); }
+.group.now { border-color:#c9b79a; background:rgba(255,251,240,.7); }
 .group > .g-title { position:absolute; top:14px; left:22px; right:22px;
   font-size:28px; font-weight:680; letter-spacing:-.6px; }
 .group > .g-sub { position:absolute; top:46px; left:24px; right:24px;
@@ -507,7 +569,7 @@ html, body { margin:0; height:100%; overflow:hidden;
 
 .section-rule { position:absolute; border-top:5px solid #e0e0d4; }
 .section-label { position:absolute; font-size:130px; font-weight:750;
-  letter-spacing:-4px; color:#dedecf; line-height:1; }
+  letter-spacing:-4px; color:#dedecf; line-height:1; white-space:nowrap; }
 
 .card { position:absolute; width:250px; background:#fff; border:1px solid #e6e6de;
   border-radius:10px; padding:10px 11px; box-shadow:0 1px 2px rgba(0,0,0,.05),
@@ -542,6 +604,16 @@ html, body { margin:0; height:100%; overflow:hidden;
 .card.folder .fmore { font-size:10.5px; line-height:16px; color:#9a9a90; }
 .card.empty { background:#fafaf6; border-style:dashed; border-color:#e0e0d6;
   box-shadow:none; color:#a8a89e; }
+.card.todo { background:#fbfdff; border-color:#d9e3ef; }
+.card.todo .trow { display:flex; gap:6px; font-size:11px; padding:3px 0;
+  align-items:baseline; line-height:16px; }
+.card.todo .trow .x { flex:1; display:-webkit-box; -webkit-line-clamp:2;
+  -webkit-box-orient:vertical; overflow:hidden; }
+.card.todo .trow.done .x { color:#b5b5ac; text-decoration:line-through; }
+.card.todo .who { flex:0 0 auto; font-size:9px; text-transform:uppercase;
+  letter-spacing:.4px; padding:1px 5px; border-radius:4px;
+  background:#eceff4; color:#71798a; }
+.card.todo .who.agent { background:#e6f2e8; color:#3f7350; }
 .card.month { background:#fffdf6; border-color:#e8dcc0; }
 .card.month .row { display:flex; gap:7px; font-size:11px; padding:2px 0;
   align-items:baseline; line-height:1.5; }
@@ -585,6 +657,13 @@ def _esc(s: str) -> str:
     return html.escape(s or "", quote=True)
 
 
+def _todo_row(item: dict) -> str:
+    who = item.get("who") or ""
+    chip = f'<span class="who {who}">{_esc(who)}</span>' if who else ""
+    done = " done" if item["done"] else ""
+    return f'<div class="trow{done}">{chip}<span class="x">{_esc(item["text"])}</span></div>'
+
+
 def _card_html(c: Card) -> str:
     style = (f"left:{c.x}px;top:{c.y}px;width:{c.w}px;height:{c.h}px;"
              f"transform:rotate({c.tilt}deg)")
@@ -604,6 +683,10 @@ def _card_html(c: Card) -> str:
         inner = (f'<div class="t">{_esc(c.title)}</div>{tag}'
                  f'<audio src="{c.href}" preload="none" controls></audio>')
         kind_badge = ""
+    elif c.kind == "todo":
+        kind_badge = f'<div class="kind">{_esc(c.meta)}</div>'
+        rows = "".join(_todo_row(i) for i in c.items)
+        inner = f'<div class="t">{_esc(c.title)}</div>{rows}'
     elif c.kind == "month":
         rows = "".join(
             f'<div class="row {i["state"]}"><span class="d">{_esc(i["day"])}</span>'
@@ -633,18 +716,24 @@ def _card_html(c: Card) -> str:
 
     data = f' data-href="{c.href}"' if c.href else ""
     full = ' data-full="1"' if c.full else ""
-    names = " ".join(i.get("n", "") for i in c.items) if c.kind == "folder" else ""
+    if c.kind == "folder":
+        names = " ".join(i.get("n", "") for i in c.items)
+    elif c.kind in ("todo", "month"):
+        names = " ".join(str(i.get("who", "")) + " " + str(i.get("text", ""))
+                         for i in c.items)
+    else:
+        names = ""
     search = _esc(f"{c.title} {c.subpath} {c.preview} {names}".lower())
     return (f'<div class="card {c.kind}" id="c{c.cid}" style="{style}"'
             f'{data}{full} data-s="{search}">{kind_badge}{inner}</div>')
 
 
 def _group_html(g: Group) -> str:
-    count = f'<span class="g-count">{len(g.cards)}</span>' if g.kind != "reminders" else ""
+    count = f'<span class="g-count">{len(g.cards)}</span>' if g.kind != "now" else ""
     sub = f'<div class="g-sub">{_esc(g.subtitle)}</div>' if g.subtitle else ""
     cards = "".join(_card_html(c) for c in g.cards)
     tint = ""
-    if g.kind != "reminders":
+    if g.kind != "now":
         hue = int(hashlib.sha1(g.title.encode()).hexdigest()[:6], 16) % 360
         tint = (f"background:hsla({hue},48%,96%,.72);"
                 f"border-color:hsl({hue},32%,84%);")
@@ -876,11 +965,26 @@ def build_board(memory: Path | str | None = None, out: Path | str | None = None,
 
     projects = section("projects", "project")
     minis = section("miniprojects", "miniproject")
+
+    # Home nexttodo.md and reminders.md read as one "what's on my plate" panel;
+    # project nexttodos stay with their own project group.
+    todos, open_todos = _todo_cards(memory)
     reminders = _reminder_group(memory, today)
+    now = None
+    if todos or reminders:
+        pending = reminders.stats.get("pending", 0) if reminders else 0
+        bits = []
+        if todos:
+            bits.append(f"{open_todos} open todo{'s' if open_todos != 1 else ''}")
+        if reminders:
+            bits.append(f"{pending} pending reminder{'s' if pending != 1 else ''}")
+        now = Group(gid="now", title="Next todo & reminders", kind="now",
+                    subtitle=" · ".join(bits) + " — nexttodo.md + reminders.md",
+                    cards=todos + (reminders.cards if reminders else []))
 
     sections = [("PROJECTS", projects), ("MINIPROJECTS", minis)]
-    if reminders:
-        sections.append(("REMINDERS", [reminders]))
+    if now:
+        sections.append(("NEXT TODO & REMINDERS", [now]))
 
     all_groups = [g for _, gs in sections for g in gs]
     if not all_groups:
@@ -907,6 +1011,7 @@ def build_board(memory: Path | str | None = None, out: Path | str | None = None,
         "projects": len(projects),
         "miniprojects": len(minis),
         "reminders": len(reminders.cards) if reminders else 0,
+        "todos": open_todos,
         "cards": n_cards,
         "collapsed": [{"path": p, "files": n, "why": why} for p, n, why in collapsed],
     }
@@ -932,7 +1037,8 @@ def main() -> int:
     else:
         print(f"board → {result['out']}  ({_human_size(result['bytes'])})")
         print(f"  {result['cards']} cards · {result['projects']} projects · "
-              f"{result['miniprojects']} miniprojects · {result['reminders']} reminder months")
+              f"{result['miniprojects']} miniprojects · {result['todos']} open todos · "
+              f"{result['reminders']} reminder months")
         # Never hide a cap: say exactly what was collapsed rather than pretending
         # the board shows every last file.
         if result["collapsed"]:

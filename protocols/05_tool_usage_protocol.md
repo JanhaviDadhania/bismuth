@@ -32,7 +32,7 @@ Bismuth has the claude CLI's standard toolset (files, search, shell, web, notebo
 - `r2d2_chirp.py` — `python3 /Users/janhavidadhania/bismuth/tools/r2d2_chirp.py --flavor <short|happy|question|ack|sad>`. Pairs with body gestures or LCD changes.
 - `tts.py` — `python3 /Users/janhavidadhania/bismuth/tools/tts.py "text"`. One word or a short phrase, not long content.
 - `tools/transcribe.py` — audio file in, transcript out.
-- `board.py` — `python3 /Users/janhavidadhania/bismuth/tools/board.py [--open]`. Regenerates `{MEMORY_DIR}/board.html`: the one infinite canvas holding every project, miniproject and reminder. Run it after any change Janhavi should be able to see, and tell her the board is refreshed rather than pasting the content into Telegram.
+- `board.py` — `python3 /Users/janhavidadhania/bismuth/tools/board.py [--open]`. Regenerates `{MEMORY_DIR}/board.html`: the one infinite canvas holding every project, miniproject, next todo and reminder. Run it after any change Janhavi should be able to see, and tell her the board is refreshed rather than pasting the content into Telegram.
 - Watcher scripts — `tools/watchers/`; create only under the Watcher Protocol.
 
 Available Tools End

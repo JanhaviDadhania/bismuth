@@ -187,6 +187,64 @@ class TestReminders(BoardTestCase):
         self.assertEqual(r["reminders"], 0)
 
 
+class TestNextTodo(BoardTestCase):
+    FILE = ("# General Next Actions\n"
+            "- @janhavi refactor the assistant prompt\n"
+            "- @agent add an executor watchdog to harness.py\n"
+            "- flag for the evaluation cycle: untagged note\n"
+            "\n## Punch list [2026-07-27]\n"
+            "- ~~@janhavi file ITR~~ done [2026-07-28]\n"
+            "- @janhavi then do visa\n")
+
+    def test_owner_and_done_state_are_parsed(self):
+        write(self.mem / "nexttodo.md", self.FILE)
+        cards, open_count = board._todo_cards(self.mem)
+        rows = [i for c in cards for i in c.items]
+        self.assertEqual(len(rows), 5)
+        self.assertEqual(open_count, 4)                      # one is struck through
+        by_text = {i["text"]: i for i in rows}
+        self.assertEqual(by_text["refactor the assistant prompt"]["who"], "janhavi")
+        self.assertEqual(by_text["add an executor watchdog to harness.py"]["who"], "agent")
+        self.assertEqual(by_text["flag for the evaluation cycle: untagged note"]["who"], "")
+        self.assertTrue(by_text["file ITR"]["done"])
+        # the "done [date]" trailer is not part of the item text
+        self.assertNotIn("done", by_text["file ITR"]["text"])
+
+    def test_one_card_per_heading(self):
+        write(self.mem / "nexttodo.md", self.FILE)
+        cards, _ = board._todo_cards(self.mem)
+        self.assertEqual([c.title for c in cards],
+                         ["General Next Actions", "Punch list [2026-07-27]"])
+
+    def test_home_todos_and_reminders_share_one_panel(self):
+        write(self.mem / "nexttodo.md", self.FILE)
+        write(self.mem / "reminders.md", "- 2026-08-28 — a thing\n")
+        write(self.mem / "projects" / "alpha" / "summary.md", "s")
+        r = self.build()
+        self.assertEqual(r["todos"], 4)
+        html = (self.mem / "board.html").read_text()
+        self.assertIn("NEXT TODO &amp; REMINDERS", html)
+        # both card kinds live in the same group box
+        panel = html.split('class="group now"')[1].split("</div><div class=\"group")[0]
+        self.assertIn('class="card todo"', panel)
+        self.assertIn('class="card month"', panel)
+
+    def test_project_nexttodo_stays_with_its_project(self):
+        write(self.mem / "nexttodo.md", self.FILE)
+        write(self.mem / "projects" / "alpha" / "nexttodo.md", "- @janhavi ship it")
+        self.build()
+        html = (self.mem / "board.html").read_text()
+        alpha = html.split('class="group project"')[1].split('class="group')[0]
+        self.assertIn("nexttodo", alpha)          # rendered as the project's spine card
+        self.assertNotIn("card todo", alpha)      # not pulled into the merged panel
+
+    def test_missing_nexttodo_is_not_fatal(self):
+        write(self.mem / "projects" / "alpha" / "summary.md", "s")
+        r = self.build()
+        self.assertTrue(r["success"])
+        self.assertEqual(r["todos"], 0)
+
+
 class TestOutput(BoardTestCase):
     def _seed(self):
         p = self.mem / "projects" / "alpha"
