@@ -95,7 +95,8 @@ Known gaps as of 2026-08-28:
 - **2026-08-28 — This file lives on `board`.** v2 requirements and decisions
   travel with v2 development, not with frozen `main`.
 
-- **2026-08-28 — Transport: GitHub is the server.** An iPhone client records
+- **2026-08-28 — Transport: GitHub is the server.** ⚠️ **SUPERSEDED
+  2026-08-31 — see the Telegram-input decision at the end of this log.** An iPhone client records
   audio and `PUT`s it to a private GitHub repo via the Contents API (one
   HTTPS call, no git on the phone, fine-grained PAT scoped to that one repo).
   Bismuth polls with an ETag every ~15s, downloads, runs it through the
@@ -104,7 +105,8 @@ Known gaps as of 2026-08-28:
   note — the one job Telegram was really doing. No tunnel, no Tailscale,
   nothing listening on the Mac.
 
-- **2026-08-28 — Delete from HEAD, keep the history.** Processed notes are
+- **2026-08-28 — Delete from HEAD, keep the history.** ⚠️ **SUPERSEDED
+  2026-08-31 (no GitHub inbox repo exists).** Processed notes are
   removed from HEAD only; the audio blobs stay in git history forever.
   Janhavi: "<1gb a year is nothing." No history truncation, no periodic
   re-init. Why: the history *is* the R4 input audit trail — every note you
@@ -116,16 +118,19 @@ Known gaps as of 2026-08-28:
   note as **queued → uploaded → saved → on board**. Why: R3. Without an ACK
   she is trusting silence, which is the exact failure being fixed.
 
-- **2026-08-28 — Local outbox queue confirmed.** The client writes audio to a
+- **2026-08-28 — Local outbox queue confirmed.** ⚠️ **SUPERSEDED
+  2026-08-31 (no phone-side client).** The client writes audio to a
   local outbox *before* attempting upload, and only deletes on a 2xx. Nothing
   is ever in flight without being on disk first. Why: R3 — a dropped note with
   no signal is the same failure as a dropped note in `dead_letter/`.
 
-- **2026-08-28 — Sidecar metadata.** Each note ships a `.json` sidecar with
+- **2026-08-28 — Sidecar metadata.** ⚠️ **SUPERSEDED 2026-08-31 — Telegram
+  supplies the message date; no sidecar exists.** Each note ships a `.json` sidecar with
   `client_msg_id`, `recorded_at` (device local time + timezone) and duration.
   Why: commit time is when it *uploaded*; R4 wants when she *spoke*.
 
 - **2026-08-28 — Outbox is local, not iCloud: `On My iPhone/Shortcuts/bismuth/outbox/`.**
+  ⚠️ **SUPERSEDED 2026-08-31 (no phone-side client).**
   Janhavi's iCloud storage is full and she is not buying more. Why it doesn't
   matter: the outbox lives on the phone's own storage, and processed notes are
   deleted after upload, so steady state is a near-empty folder holding ~1 MB/day
@@ -137,7 +142,7 @@ Known gaps as of 2026-08-28:
   Apple dependency and no recurring cost.
 
 - **2026-08-28 — Capture path settled end to end (Janhavi confirmed the
-  Shortcuts actions exist).** Record on phone → save to local outbox folder →
+  Shortcuts actions exist).** ⚠️ **SUPERSEDED 2026-08-31.** Record on phone → save to local outbox folder →
   Shortcut `PUT`s to the private GitHub inbox repo → laptop polls GitHub and
   pulls. The local folder is the queue. This half of the pipeline is closed;
   remaining design work is on the *processing* side.
@@ -407,3 +412,331 @@ output *is* the trace.
   **This changes Q13.** Removing watchers, mailbox, synthetic inbox and slash
   commands strips several hundred lines out of what v2's harness needs to do.
   The refactor case weakens accordingly — see Q13.
+
+- **2026-08-31 — Input is Telegram. The iOS Shortcut and the GitHub inbox repo
+  are dropped.** "let's keep telegram as audio input. I will speak to telegram
+  only. no need for iphone shortcut." Telegram is now **both** the input and
+  the output channel.
+  Why it's the right call: Telegram's servers were already the durable buffer
+  that the whole GitHub design existed to recreate. Dropping it removes the
+  phone-side outbox, the drain loop, base64 encoding, the fine-grained PAT, the
+  5-minute poll, the ack repo, *and* the one acknowledged hole in the design
+  (notes stranded in an offline outbox). Nothing of ours runs on the phone.
+  Given up: the permanent git-history archive of raw audio. Acceptable — the
+  transcript is the R4 record and she has said she doesn't want audio kept.
+  **What this makes load-bearing:** v1 lost 15 real messages on this exact
+  transport (`dead_letter/`, 113 entries). v2's rule is that nothing is ever
+  silently dead-lettered — failures go to a visible retry queue, she is told,
+  and the count shows on the board.
+  **Cutover consequence:** v1 and v2 cannot both poll `getUpdates` on one bot
+  token — two consumers of one offset steal each other's messages. v2 gets a
+  second bot token during development and is pointed at the real one at
+  cutover.
+
+- **2026-08-29 — Sub-agents do all memory writes.** Even a one-line append to
+  `nexttodo.md` is delegated. The main agent's only outputs are sub-agent
+  instructions and replies. Why: keeps the main agent's turn as short as
+  possible, which is what availability costs. Accepted consequence: the ack is
+  seconds rather than milliseconds.
+
+- **2026-08-29 — Sub-agents are stripped bare.** No protocols, no skills, no
+  `soul.md`, no identity — none of v1's `build_prompt` scaffolding. Consequence
+  that is now a hard constraint: **every instruction the main agent writes must
+  be self-contained** (absolute path, exact text, exact operation), because the
+  sub-agent has no context to fall back on.
+
+- **2026-08-29 — Session reset on request.** Beyond the automatic 40% reset,
+  she can say "when you're done with this, reset the session". The reset is
+  deferred until the current note is fully processed, then applied. A runtime
+  instruction, not a slash command.
+
+- **2026-08-29 — The trace schema is ours, not Claude's.** ⚠️ **SUPERSEDED
+  2026-08-31 — see the fixed-stack decision below.** `subagent_event`
+  normalises to `{tool, input, output, ok}` with `claude -p` stream-json as one
+  *adapter*, raw line kept alongside. Why: R4 was defined as "whatever
+  `claude -p` emits", which is a Claude-specific wire format — so model
+  independence and R4 were on a collision course. This removes it.
+
+## Q16 — Open-weight models for sub-agents
+
+Raised by Janhavi 2026-08-29: "is it feasible to also create them from open
+weight models? I am thinking to reduce dependency from claude."
+
+Feasible, and sub-agents are the only good place for it — they are stateless,
+single-purpose, and (since the bare-prompt ruling) receive fully self-contained
+instructions, which is exactly the profile a smaller model can handle. The main
+agent stays on Claude: it holds the session and makes the routing judgment.
+
+Two real constraints: (a) the open-weight models genuinely good at multi-step
+tool use are far too large for a laptop, so *local* means a small model that is
+measurably worse at chained tool calls — hosted open-weight (Together /
+Fireworks / Groq / OpenRouter) removes the Anthropic dependency without
+hardware; (b) `claude -p` supplies the agent loop *and* the trace format, so a
+non-Claude sub-agent means building both — hence the normalised trace schema
+above, which must land first.
+
+Suggested first trial: the note-writing sub-agent. Mechanical, and trivially
+scoreable — did the right text land in the right file?
+
+**Status: CLOSED 2026-08-31.** `claude -p` stays for both the main agent and
+sub-agents. Not revisited in v2. See the fixed-stack decision below.
+
+---
+
+## Decisions — 2026-08-31
+
+- **2026-08-31 — The stack is fixed. No pluggability layer.** Telegram in and
+  out, faster-whisper for STT, macOS `say` for TTS, `claude -p` for the main
+  agent and for sub-agents. No adapter interfaces, no registry, no config
+  surface for swapping any of them. Janhavi: *"let's keep it simple. I will be
+  using telegram for long. I will be using TTS AND STT model. It's not that
+  difficult to change those. and claude -p will also stay same."* Why: an
+  abstraction over one implementation costs an interface you must not leak
+  through, a conformance suite, and a permanent lowest-common-denominator tax —
+  paid for years to save a day of work that may never come. Supersedes the
+  "pluggable components" design principle and the normalised-trace decision of
+  2026-08-29. `subagent_event` now stores `claude -p`'s stream-json line as-is;
+  the raw lines stay on disk, so any future reshaping is still possible.
+
+- **2026-08-31 — The runtime owns its own durable queue.** Telegram holds
+  messages too, but correctness does not depend on that. Janhavi: *"what if we
+  include queue in our implementation?"* Why: no behavioural change — v2
+  already spools to disk before advancing the offset — but it is now stated as
+  a property of the runtime rather than a property borrowed from Telegram.
+
+- **2026-08-31 — One voice: only the main agent talks to Janhavi.** Sub-agents
+  have no Telegram channel at all — not for questions, not for progress, not
+  for completion. Every message she receives was written by the main agent.
+  Why: her explicit ruling, and it keeps the chat from reading like several
+  programs talking over each other.
+
+- **2026-08-31 — The main agent does no work whatsoever.** Not "writes nothing
+  to memory" — *nothing*. No file edit, no command, no fetch, no search.
+  Janhavi: *"main agent never does any work. if it needs to write something in
+  file, it will be like, write 'this' in file. and sub agent will write it."*
+  Enforcement is structural: **the main agent runs with no tools.** Why: a
+  convention it is merely asked to respect will be broken on the turn where
+  delegating feels slower than doing it.
+
+- **2026-08-31 — Two task lists: `unclear` and `working`.** Ambiguous requests
+  park in `unclear` *before* any question is asked, the main agent clarifies
+  over Telegram, and only then does the task move to `working` and get broken
+  into sub-agents. The task record holds each sub-agent's id and the verbatim
+  instruction it was given. Why: park-first is the same rule as `others/` — a
+  question that never gets answered must not be able to lose the request.
+
+- **2026-08-31 — Sub-agent questions are a terminal status, not a channel.**
+  A sub-agent ends as `done`, `needs_input`, or `failed`. On `needs_input` it
+  **exits** carrying the question as its return value; the task moves back to
+  `unclear` and the main agent asks her. Why: this gives back the ask-a-question
+  loop she wants without reintroducing v1's mailbox — nothing is bidirectional
+  and nothing sits running while a question waits. Closes the open
+  "completion notification" item: the main agent relays completion, questions,
+  and failures alike.
+
+- **2026-08-31 — Sub-agent results feed the same serialized turn queue as
+  notes.** A sub-agent finishing wakes the main agent exactly like an incoming
+  note does; one queue, one turn at a time, in arrival order. Why: required,
+  not optional — without it the `working → unclear` return path never fires
+  until Janhavi happens to speak, and the loop deadlocks.
+
+- **2026-08-31 — `tasks.json` is a projection of the trace, written by the
+  runtime.** The main agent's turn returns *intents* (create / ask / clarify /
+  spawn / done); the runtime performs them and writes a `task_*` trace event
+  for each. Why: preserves the no-work rule above, keeps one source of truth
+  (same pattern as the ack), and makes the task list rebuildable after any
+  crash. It also makes the 40% session reset safe — the state was never inside
+  the session.
+
+- **2026-08-31 — Audio is kept forever, in a separate private repo.** Reverses
+  the earlier "prune" recommendation. Every incoming voice note is archived to
+  `bismuth-audio` as `<local ISO ts>__<trace_id>.ogg` under `YYYY/MM/`, joinable
+  to the trace on `trace_id`. Janhavi: *"i want audio retained. setup a callback
+  that keeps adding audios in seperate private repo."* Why a third repo, against
+  the two-repo rule: audio is opaque binary bulk written on every note and read
+  by nothing — in `bismuth-memory` it would grow that repo's history without
+  bound and slow every sync of the thing that syncs constantly. Why the
+  transcript alone is not enough: it is the only way to ever check whether
+  faster-whisper heard her correctly.
+
+- **2026-08-31 — Archiving is off the critical path.** Ingest *moves* staged
+  audio into the archive working tree (a local rename, cannot fail on network)
+  and returns; a background pusher commits and pushes on a timer. Two trace
+  events, `audio_archived` and `audio_pushed`, because they fail independently.
+  Why: **a note must never be blocked, delayed, or failed by the archive.** If
+  GitHub is down for a day, a day of audio waits locally and the notes process
+  normally.
+
+- **2026-08-31 — `done` is an event, not a state; no cleanup daemon.** Folding
+  a `task_done` event drops the task from the live list, so the list holds only
+  `unclear` and `working`. Janhavi: *"if the task is done, we can remove it from
+  the main agent's list. why bloat it. there could be a cleaning up demon
+  running that does this. or something else. whichever is best architecture
+  wise."* Why not a daemon: because `tasks.json` is a projection, nothing
+  accumulates to sweep — a daemon would be another process to supervise, could
+  race with a turn in flight, and would exist only to delete state we never
+  needed to keep. Nothing is lost; every task ever created stays in the trace.
+  One concession: a five-line tail of recently-done tasks is injected into the
+  turn so *"change that thing you just did"* has something to bind to.
+
+- **2026-08-31 — Board gets a `Tasks` section in the main space; acks go to a
+  secondary strip.** `Tasks` is a top-level section peer to projects,
+  miniprojects and reminders, showing `NEEDS YOU` (with count) above `WORKING`.
+  Acks and recently-completed tasks move to a strip at the foot of the board.
+  Janhavi: *"i liked the idea of showing main agent's list on board... we can
+  show ack on board but keep is somewhere not occupying the main space."* Why:
+  the main space belongs to live work and to anything waiting on *her*; an ack
+  is reassurance she goes looking for, not information to push at her. This is
+  an explicit amendment to R1, which had frozen the board's design — it adds
+  sections, and changes nothing that already renders.
+
+- **2026-08-31 — Every trace event carries `ts`, `seq` and `trace_id`.**
+  `seq` is a global, gapless, monotonic integer assigned under the append lock,
+  and it — not `ts` — is the authoritative sort key. Janhavi: *"i hope all
+  events in trace are saved with time so i can sort on it and see what happened
+  in what order. I need a complete trace."* Why `ts` alone is insufficient: a
+  turn can spawn four sub-agents inside one millisecond, and timestamps with
+  different UTC offsets (travel, DST) do not sort lexicographically. Bonus
+  property: **a gap in `seq` means an event was lost**, so trace completeness
+  becomes checkable rather than assumed.
+
+- **2026-08-31 — Capture `claude -p` stream-json for the main agent too, not
+  just sub-agents.** New events `agent_event` and `turn_usage`. Janhavi asked
+  whether this is costless. Answer, recorded so it is not re-litigated:
+  **token cost is genuinely zero** — the stream is the model's own output
+  re-rendered, no extra calls, no extra tokens. **Disk cost is not zero** and is
+  the largest driver of trace size, since one tool result can be a whole file
+  read; the per-event size cap is what holds it. **What it contains:** every
+  assistant message, every tool call with full input, every tool result, and a
+  final `result` message with token usage. **What it does not contain:** the
+  model's reasoning — it is a complete record of *what was done*, not *why it
+  was decided*. Useful side effect: the `result` message's usage numbers turn
+  the 40% session-reset rule from an estimate into an exact measurement, closing
+  the "what is the 40% measured against" gap.
+
+- **2026-08-31 — Runtime state is tiered, not one dictionary.** Answering
+  *"is there a dictionary somewhere in code that has all that?"*: **tier 1**
+  (`~/.bismuth/state.json`) is authoritative and small — `offset`,
+  `processed_ids`, `turn_queue`, `session`. **Tier 2** (`tasks.json`,
+  `subagents.json`) is derived, folded from the trace at boot, and can be
+  deleted without loss. **Tier 3** is ephemeral and dies with the process.
+  Why it matters beyond tidiness: it makes **boot reconciliation** expressible —
+  a sub-agent with a `subagent_spawned` event and no terminal event was killed
+  by the crash, so it is marked failed and its task returns to `unclear` and she
+  is told. With one flat dictionary there is no way to distinguish "is running"
+  from "was running before we died", which is precisely how v1 accumulated 113
+  dead-lettered entries nobody was ever told about. `turn_queue` is the only
+  state with no rebuild path, so it is written before a sub-agent is reaped.
+
+- **2026-08-31 — Thinking stays on; sub-agents use `--effort low`, never
+  thinking-disabled.** Janhavi asked whether capturing the agent's thinking
+  costs tokens. Recorded so it is not re-litigated: **yes — thinking tokens are
+  billed as output tokens.** But three measured facts change the decision.
+  (a) On Opus 5 adaptive thinking is **on by default**, so this was never an
+  opt-in cost; and it spends nothing when unused — probes returned
+  `output_tokens_details.thinking_tokens: 0` on trivial prompts. (b) `claude -p`
+  reports that field in its `result` event, so v2 gets exact per-turn thinking
+  spend in the trace for free. (c) *Seeing* it is free — the thinking is already
+  billed, and display settings do not change billing; what is unavailable is the
+  raw chain of thought, which Opus 5 never returns (summaries only).
+  **The load-bearing part:** disabling thinking on Opus 5 has a documented
+  failure mode where the model writes a tool call into visible text instead of
+  emitting a real one — the turn succeeds, the work never happens, no error is
+  raised. For a sub-agent whose whole job is one file append, that manufactures
+  issue #18 ("sub-agent silently does nothing") in a system with no verification
+  to catch it. Low effort gets the saving without buying the failure. The real
+  cost of thinking is the **context window**, which drives the 40% reset harder.
+
+- **2026-08-31 — For tracing *why*, a stated reason beats captured thinking.**
+  The main agent returns a one-line reason with its routing intent, recorded in
+  `route_decided`. Why: it is a handful of tokens, structured, and — the part
+  that matters — a **commitment attached to the action**. Thinking explores
+  options the model then abandons, so as an R4 audit record it can actively
+  mislead about why something happened.
+
+- **2026-08-31 — Strip the `claude -p` prefix. Measured, not estimated.**
+  Janhavi: *"we will work on remove claude's own prompt 26k tokens. I am sure I
+  don't need that hell."* A default spawn carries **27,398 tokens** before the
+  instruction is read. Decomposition: irreducible wrapper **805** (cannot be
+  removed), Claude Code's own system prompt **3,021**, built-in tool schemas
+  **14,749**, skills **5,310**, MCP **1,975**, CLAUDE.md/cwd the remainder.
+  **Tool schemas are more than half** — the opposite of where the earlier draft
+  looked, which had assumed the *instruction* was the expensive part. Stripped
+  config measures **3,355 tokens: an 87.7% reduction.** This supersedes the
+  claim in the architecture doc that bare prompts make sub-agents cheap; what
+  bare prompts actually buy is the *ability* to strip the runner.
+
+- **2026-08-31 — Sub-agent tool set is exactly `Read,Write,Edit,Bash`.**
+  Janhavi: *"I just need terminal tool and browser and that's it. browser is
+  silicon browser."* Read/Write/Edit are the memory writes. Bash is the
+  terminal. **The browser needs no tool and no MCP server**: `silicon` is a CLI
+  at `~/.local/bin/silicon` (`silicon browser [name]`), so Bash already reaches
+  it — the one capability that looked like it needed an MCP server turned out
+  to be a command. Per-tool schema cost above the 805 floor: Edit 348,
+  Write 522, Read 608, Bash 1,358. Bash is the most expensive of the four and
+  the one that lets a sub-agent wander; kept deliberately, with the cost
+  recorded rather than argued.
+
+- **2026-08-31 — No skills, no MCP, own system prompt.** Janhavi: *"i don't
+  need any skill... remove useless MCP servers... we will replace system prompt
+  with our prompt."* `--disable-slash-commands`, `--strict-mcp-config` with no
+  `--mcp-config` (dropping all ~30 servers inherited from the work `claude.ai`
+  account — they cost only ~2k today only because every one reports "needs
+  authentication" and never loads its schemas; authenticate one and that climbs),
+  and `--system-prompt` to replace Claude Code's 3,021-token prompt outright —
+  not `--append-system-prompt`, which keeps it.
+
+- **2026-08-31 — Cutting tools removes expensive *paths*, not just prefix.**
+  The stronger reason for the short tool list, measured on a real one-line file
+  append: a default-configured spawn reached **118,011 tokens / $0.37** because
+  it had the full tool set and chose to shell out through Bash three times, each
+  command's output re-entering context. The stripped config used `Read` then
+  `Edit` for **8,092 tokens / $0.024** — 15× cheaper, correct both times, and it
+  obeyed the terse-reply instruction. Single run each; treat costs as
+  directional.
+
+- **2026-08-31 — Main agent runs `--tools ""` and returns intents as JSON.**
+  Its no-work ruling makes it the cheapest process in v2: **805 tokens plus her
+  prompt**. `claude -p --json-schema` validates structured output, so the
+  create/ask/clarify/spawn/done intents come back as validated JSON rather than
+  prose the runtime parses hopefully. *Open: the intent schema is not yet
+  written.*
+
+- **2026-08-31 — Stripping breaks per-folder `CLAUDE.md`; repair is explicit.**
+  `~/bismuth-memory` has **5 `CLAUDE.md` files** (~10.6 KB) under
+  `siliconResearch`, `find_a_job/star`, `find_a_job/amp`,
+  `nostayidiot/twitterdaily`, `find_a_job/sarvam/outreach` — the deliberate
+  "each folder's context lives beside its data" rule. A stripped sub-agent in a
+  clean cwd does not auto-discover them. Fix: **the main agent names the
+  `CLAUDE.md` path in the instruction** (the sub-agent has Read) or inlines the
+  relevant lines. Why this is better than what it replaces: it converts implicit
+  discovery into an explicit step that lands in the trace, and it is what the
+  self-contained-instruction rule already required.
+
+- **2026-08-31 — `--bare` cannot be used; `< /dev/null` is required.**
+  `--bare` skips hooks, LSP, plugin sync and CLAUDE.md discovery — but refuses
+  OAuth and the keychain and demands `ANTHROPIC_API_KEY`; on Janhavi's
+  subscription login it returns *"Not logged in · Please run /login"*, so using
+  it would mean paying API rates separately from the subscription. Separately,
+  every spawn without `< /dev/null` stalls **3 seconds** waiting on stdin —
+  pure added latency on her ack, on every sub-agent.
+
+- **2026-08-31 — `--max-budget-usd` per spawn.** Partly closes the "runaway
+  work, no kill switch" gap in §7 of the architecture: not a kill switch for the
+  main agent, but a hard bound on the blast radius of a runaway sub-agent — the
+  failure the 118k-token spawn above demonstrates is real.
+
+- **2026-08-31 — Correction: the stripped figures are *carrier cost*, not
+  totals.** Janhavi caught that the measurements used `--system-prompt "x"`, a
+  one-character placeholder, because the real prompt is not written yet. So
+  3,355 (sub-agent) and 805 (main agent) are what a spawn costs **before** her
+  prompt. Measured with v1's prompts as anchors: sub-agent carrier 3,355 →
+  **3,858** with `executor.md` (prompt costs 503); main agent carrier 805 →
+  **2,523** with `assistant.md` (prompt costs 1,718). The like-for-like
+  reduction is therefore **27,398 → 3,858 = 85.9%**, not the 87.7% recorded
+  earlier — the default baseline includes Claude Code's own 3,021-token system
+  prompt, so comparing it against a one-character placeholder flattered the
+  result by ~3k. Useful consequence: replacing Claude's prompt is a swap with a
+  **3,021-token budget** before it costs anything, and `executor.md` spends only
+  17% of it — so there is no reason to write the v2 prompts tersely. Planning
+  ratio for her markdown: **~2.8 bytes per token**, not 4.
