@@ -986,6 +986,16 @@ def build_board(memory: Path | str | None = None, out: Path | str | None = None,
     if now:
         sections.append(("NEXT TODO & REMINDERS", [now]))
 
+    # v2 additions (§4.12): Tasks in the main space, an others/ panel, and a
+    # receipts strip. Read from the trace. Guarded so the board keeps working
+    # exactly as before if v2 is not set up on this machine.
+    try:
+        import sys as _sys
+        from v2 import board_sections as _v2board
+        sections.extend(_v2board.build(_sys.modules[__name__], memory))
+    except Exception:
+        pass
+
     all_groups = [g for _, gs in sections for g in gs]
     if not all_groups:
         return {"success": False, "error": f"nothing to render under {memory}"}

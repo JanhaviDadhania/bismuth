@@ -851,3 +851,82 @@ sub-agents. Not revisited in v2. See the fixed-stack decision below.
   with no stdin, so `git commit` without `-m`, a pager, or any prompt hangs the
   worker until it is killed. (b) **Absolute paths always** — a stripped worker
   starts in a directory it knows nothing about.
+
+## Decisions — 2026-08-31 (building the runtime)
+
+Decisions forced by the implementation, all measured or exercised rather than
+assumed. The code is `v2/`, tests are `tests/test_v2.py`.
+
+- **2026-08-31 — Sub-agent spawns need `--permission-mode bypassPermissions`.**
+  Not in §4.9.1's spawn command, and it must be: in print mode a tool call that
+  needs permission is *denied*, so a worker whose whole job is a file write
+  fails every time. Verified by running one: without it, nothing is written.
+
+- **2026-08-31 — `DESTINATIONS` is injected once per session, not per turn.**
+  Measured on her real tree: the block is **~3.2k tokens** (244 folders). Per
+  turn that would dominate the context and drive the 40% reset several times
+  faster. So it is sent on the first turn of a session and again only when the
+  tree's fingerprint changes, and the runtime tells the agent it is a
+  replacement. Filenames are included rather than folder names alone — that
+  costs ~1.3k of the 3.2k and is worth it: without them the agent guesses
+  `nexttodo.md` against a real `next_todo.md`, the worker dutifully creates the
+  wrong file, and her notes silently split. That is the exact failure R3 exists
+  to prevent. `_archive/` is excluded from routing destinations.
+
+- **2026-08-31 — The runtime writes `others/` itself, not a sub-agent.**
+  Park-first has to be atomic. If parking were delegated, a worker failure
+  would lose the note in the window between "we couldn't route it" and "it is
+  on disk" — the one thing §4.7 exists to prevent. The runtime writes
+  `others/<timestamp>__<trace_id>__<slug>.md` synchronously, then the question
+  is asked. Tested: `test_park_writes_before_the_question_is_asked` asserts the
+  trace ordering, not just the outcome.
+
+- **2026-08-31 — Consequence: the agent does not know the `others/` filename.**
+  It named one in testing and was wrong, which is a trust bug however small.
+  The prompt now says the runtime names the file and the `OTHERS` block will
+  show it next turn — never state a filename you have not been shown.
+
+- **2026-08-31 — The routing guard is enforced in the runtime, not trusted to
+  the prompt.** If the agent names a destination that does not resolve, the
+  runtime does *not* write it: it emits `route_rejected`, parks the note in
+  `others/`, and records why. So "the destination must already exist" is a
+  property of the system rather than an instruction the model might miss.
+
+- **2026-08-31 — A successful note-filing worker does not wake the main agent.**
+  Sub-agent results feed the turn queue (§4.8), but a plain `route` write that
+  returned `done` gives the agent nothing to decide, and a turn per note would
+  cost ~$0.08 and delay her next note for nothing. So the queue is woken when
+  `status != done` **or** the worker belongs to a task. Everything that needs
+  judgement still reaches the agent; the ack is written by the runtime either
+  way.
+
+- **2026-08-31 — Route workers are tracked in the projection like any other.**
+  Otherwise a crash mid-write leaves no `running` record for boot reconciliation
+  to find, and the note goes quiet — which is v1's failure mode exactly.
+
+- **2026-08-31 — Sub-agent results are written to the queue before the worker
+  thread ends**, per §6's rule that the write is the commit point.
+
+- **2026-08-31 — The board additions are a guarded import.** `tools/board.py`
+  gains three sections via `v2/board_sections.py` inside a `try/except`, so the
+  board renders exactly as before if v2 is absent or misconfigured. R1 said
+  don't redesign the board; this adds and changes nothing that already rendered.
+
+- **2026-08-31 — `python3 -m v2 feed "<text>"` is the offline test path.** Runs
+  one note through the real agents with real workers, prints her side instead of
+  sending it, and drains sub-agent results to settlement. With `BISMUTH2_*`
+  pointed at a scratch tree, nothing rehearses against her real memory.
+
+- **2026-08-31 — Measured cost of one note, end to end.** Main agent turn
+  **$0.079** (7,018 tokens of context — 3.5% of a 200k window, so ~28 notes to
+  the 40% reset), plus one sub-agent at **$0.044**. About **$0.12 a note**. The
+  earlier 8,092-token figure for a file append was optimistic in practice: the
+  real worker spent 22,957, mostly because it chose `Bash` (`od`) for its
+  read-back verification rather than `Read`.
+
+- **2026-08-31 — Exercised end to end before declaring it done**, against a
+  scratch memory tree: declared routing, mangled-STT recovery ("sheldon" →
+  `projects/seldon/`), an unroutable note parking in `others/` and asking her,
+  her answer draining it into a folder created after the session started, a
+  full task lifecycle with `task_done`, and a retrieval query answered with the
+  quoted line and its path. All traced, all ordered, no gaps.

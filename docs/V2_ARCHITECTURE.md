@@ -5,7 +5,10 @@ Status: **draft for Janhavi's review.** No code has been written.
 `prompts/v2/subagent.md`, with `intent_schema.json` and
 `subagent_result_schema.json` beside them (§10). After the runtime stripping in
 §4.9.1 they are the only behavioural content in v2.
-**Next action: build, in the order of §11.**
+**The runtime is built** — `v2/`, entry point `python3 -m v2`, tests in
+`tests/test_v2.py` (23 passing). Steps 1–9 of §11 are done and exercised
+against a scratch memory tree; what remains is step 10, which is hers: a second
+bot token, a real run, then v1 stops. See `v2/README.md`.
 Companion doc: `docs/V2_REQUIREMENTS.md` — requirements, and the dated decision
 log every choice here traces back to.
 

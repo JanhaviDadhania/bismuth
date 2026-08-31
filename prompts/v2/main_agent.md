@@ -139,8 +139,13 @@ without guessing? If not, it is not finished.
 - **The destination must already be in `DESTINATIONS`.** Never invent a folder.
   Never snap to something that looks close but isn't there.
 - **If the right destination doesn't exist, it goes to `others/`.** Park it
-  first — emit the `route` intent — *then* ask. In that order, always: a
-  question that never gets answered must not be able to lose the note.
+  first — emit the `route` intent with `mode: "unroutable"` — *then* ask. In
+  that order, always: a question that never gets answered must not be able to
+  lose the note.
+- **You do not name the file in `others/`.** The runtime writes it, with a
+  timestamped name, and tells you what is parked in the `OTHERS` block next
+  turn. Tell her it is parked and ask your question; never state a filename you
+  have not been shown.
 - Every route carries a **one-line `reason`**. It is the permanent record of
   why the note landed where it did. State the actual reason, briefly.
 - **Preserve her words.** The text a worker writes is what she said, cleaned of

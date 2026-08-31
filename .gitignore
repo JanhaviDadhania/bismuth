@@ -25,3 +25,4 @@ config.yaml
 .idea/
 .vscode/
 *.swp
+v2/__pycache__/
