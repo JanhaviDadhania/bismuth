@@ -740,3 +740,114 @@ sub-agents. Not revisited in v2. See the fixed-stack decision below.
   **3,021-token budget** before it costs anything, and `executor.md` spends only
   17% of it — so there is no reason to write the v2 prompts tersely. Planning
   ratio for her markdown: **~2.8 bytes per token**, not 4.
+
+## Decisions — 2026-08-31 (writing the prompts)
+
+- **2026-08-31 — v2's scope is capture and retrieval. The brainstorming
+  partner moves out of Bismuth.** Janhavi: *"earlier bismuth, v1, was an
+  assistant, a brainstorming partner and worker too. this new bismuth is mainly
+  an agent that listens to me and puts things in memory without ever missing.
+  second, it can search in unstructured memory when i ask for something. this is
+  scoped down version. I will be moving out the brainstorming agent from
+  bismuth."* Two jobs, and only two: **nothing she says is lost**, and **she can
+  get it back**. Consequences: (a) `assistant.md`'s companion half — mood
+  reading, register matching, Rogers / MI / Linehan / Stern / Hakomi, "amplify
+  her vibe" — is **not carried into v2**; what survives is tone only (plain,
+  short, congruent, no flattery). (b) The main agent is told explicitly not to
+  join in when she thinks out loud — capture it and stay out of the way. (c)
+  **Retrieval is a first-class job**, not an afterthought, and it needed
+  designing: see the search decisions below.
+
+- **2026-08-31 — Both prompts are written**, at `prompts/v2/main_agent.md` and
+  `prompts/v2/subagent.md`. This closes the blocking item in §9 of the
+  architecture. Measured cost, same method as the stripping measurements
+  (placeholder `--system-prompt "x"` for the carrier, then the real file):
+
+  | | carrier | with real prompt | prompt costs |
+  |---|---:|---:|---:|
+  | Main agent, `--tools ""` | 805 | **4,779** | 3,974 |
+  | Sub-agent, `Read,Write,Edit,Bash` | 3,355 | **5,063** | 1,708 |
+
+  Both carriers reproduced the previously recorded figures exactly, which is a
+  useful check on the earlier measurement. Like-for-like against the 27,398
+  default spawn, the sub-agent is an **81.5% reduction**. The sub-agent prompt
+  spends **57% of the 3,021-token swap budget**; the main agent prompt
+  **exceeds it by 953** — noted rather than trimmed, because the budget is the
+  cost of a *swap* and Claude Code's own prompt does none of this job. Actual
+  bytes-per-token for these files: **2.89**, close to the 2.8 planning ratio.
+
+- **2026-08-31 — The intent schema is written**, at
+  `prompts/v2/intent_schema.json`. Shape: `{"intents": [ … ]}`, performed by the
+  runtime in listed order; an empty list means silence. Eight types: `route`,
+  `task_create`, `task_ask`, `task_clarify`, `spawn`, `task_done`, `reply`,
+  `session_reset`. **Flat object, not `oneOf` per type** — every intent is one
+  object with `type` plus optional fields, `additionalProperties: false`, and
+  the per-type required fields documented in the prompt rather than in the
+  schema. Why: structured-output validators handle discriminated unions
+  inconsistently, and a schema that `--json-schema` rejects at runtime is worse
+  than one that under-constrains. The prompt carries the strictness.
+  `task_ref` is either an existing `task_id` or a short label invented for a
+  task created in the same turn, which the runtime maps — needed because the
+  agent cannot know an id the runtime has not assigned yet.
+
+- **2026-08-31 — The sub-agent's return shape is a JSON final message**, at
+  `prompts/v2/subagent_result_schema.json`: `status` (`done` / `needs_input` /
+  `failed`), `summary`, `output`, `question`, `error`. Why a JSON object rather
+  than `--json-schema` on the spawn: the sub-agent runs *with* tools, and that
+  flag combination is untested here; the prompt requires the shape and the
+  runtime parses it, marking anything unparseable as `failed` — which is
+  visible, not silent.
+
+- **2026-08-31 — The main agent receives a `DESTINATIONS` block every turn.**
+  This closes a real hole: the main agent runs `--tools ""`, so *it cannot
+  check whether a path exists*, yet §4.6 requires that the destination already
+  exist. The runtime injects the current memory tree — paths, plus which folders
+  carry a `CLAUDE.md` — alongside `NOTE`, `TASKS`, `RECENT` and `OTHERS`. The
+  agent may route only to something in that block, or to `others/`. The
+  `CLAUDE.md` flag is what lets it satisfy the §4.9.1 repair without guessing.
+
+- **2026-08-31 — Retrieval is a task, with `kind: "search"`.** Not a special
+  path: she asks a question about her own memory, the main agent creates a task,
+  spawns a read-only worker with an explicit search instruction (which subtrees,
+  which terms and misspellings, return matching lines *with paths*), and answers
+  her from the result in its own words. Questions about *what happened* rather
+  than what she wrote are answered from **the trace**, not the memory tree.
+  Why a task and not a shortcut: it shows up in `WORKING` on the board, so she
+  can see it is looking, and `done` drops it like any other task.
+
+- **2026-08-31 — The anti-fabrication rule, stated in both prompts.** The
+  sub-agent must never invent a path, filename or quote, and an empty result is
+  a correct answer. The main agent must never claim something is saved before a
+  worker reports it saved, and must never answer from "memory" — it has none
+  beyond the current turn. Why it earns the tokens: retrieval is the one job
+  where a confident wrong answer is worse than no answer, and issue #18 means
+  nothing downstream will catch it.
+
+- **2026-08-31 — Sub-agents read back what they wrote.** After any write or
+  edit, re-read the changed region and confirm the text is there before
+  reporting `done`. Why: it does not close issue #18 — nothing independently
+  verifies a sub-agent — but it converts the specific failure the system is most
+  exposed to (a model that reports success without having written anything) from
+  undetectable into self-detectable, for a few hundred tokens.
+
+- **2026-08-31 — Sub-agent effort posture: retry the mechanism, never
+  reinterpret the task.** v1's `executor.md` said *"don't bail on the first
+  wall"*; v2 says *"do exactly the instruction, nothing more."* These conflict
+  without a rule, so: a missing directory, permission, wrong flag or transient
+  failure is a **mechanism** problem — find another way. What was asked is the
+  **task** — never re-scope it, never substitute a different file, never decide
+  the request was mistaken. If the task itself cannot be done as written, end
+  `failed` or `needs_input`.
+
+- **2026-08-31 — The runtime owns git for `bismuth-memory`; sub-agents never
+  run it.** The sub-agent prompt forbids `git` outright. Why: several workers
+  can run concurrently, and a commit from inside one of them races the others
+  and the sync loop. Same shape as the audio pusher — a background loop, off the
+  critical path, honouring the existing commit-and-push-before-pull rule that a
+  single-shot worker cannot.
+
+- **2026-08-31 — Two operational rules the sub-agent prompt states explicitly,
+  because they are silent killers.** (a) **Nothing interactive** — spawns run
+  with no stdin, so `git commit` without `-m`, a pager, or any prompt hangs the
+  worker until it is killed. (b) **Absolute paths always** — a stripped worker
+  starts in a directory it knows nothing about.

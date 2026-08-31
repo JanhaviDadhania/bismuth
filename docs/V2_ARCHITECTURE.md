@@ -1,8 +1,11 @@
 # Bismuth v2 — Architecture
 
 Status: **draft for Janhavi's review.** No code has been written.
-**Next action: write the two prompts — see §10.** After the runtime stripping in
+**Both prompts are now written** — `prompts/v2/main_agent.md` and
+`prompts/v2/subagent.md`, with `intent_schema.json` and
+`subagent_result_schema.json` beside them (§10). After the runtime stripping in
 §4.9.1 they are the only behavioural content in v2.
+**Next action: build, in the order of §11.**
 Companion doc: `docs/V2_REQUIREMENTS.md` — requirements, and the dated decision
 log every choice here traces back to.
 
@@ -15,10 +18,17 @@ is still open, it is marked **OPEN** inline rather than silently assumed.
 ## 1. What v2 is
 
 One sentence: **Janhavi speaks into her phone, and a thing she trusts puts it
-in the right place and tells her it did.**
+in the right place, tells her it did, and can find it again when she asks.**
 
 Everything else — sub-agents, tracing, the board — exists to make that sentence
 true and verifiable.
+
+**v2 is a scoped-down Bismuth.** *Ruled 2026-08-31.* v1 was three things: an
+assistant, a brainstorming partner, and a worker. v2 is **capture and
+retrieval, and nothing else** — it listens without ever missing, and it searches
+her unstructured memory when she asks. The brainstorming partner is moving out
+of Bismuth entirely. This is why `assistant.md`'s companion half does not appear
+in the v2 main agent prompt: the job it served is no longer this system's job.
 
 ### The four requirements this serves
 
@@ -335,6 +345,14 @@ recovering `seldon` from "Sheldon" is a feature.
 folders, no snapping to a near-miss that isn't there. If the resolved
 destination is not a real path, the note goes to `others/`.
 
+**How the agent knows what exists, given it has no tools.** *Resolved
+2026-08-31 — this was an unclosed hole.* With `--tools ""` the main agent cannot
+check a path, so the runtime injects a **`DESTINATIONS` block** into every turn:
+the current memory tree, plus which folders carry a `CLAUDE.md`. The agent may
+route only to something in that block, or to `others/`. The `CLAUDE.md` flag is
+also what lets it satisfy the §4.9.1 repair — naming the right context file in
+an instruction — without guessing.
+
 The memory structure is unchanged from v1 — `projects/`, `miniprojects/`, root
 files, `reference/`. No restructuring. All 142 existing destinations remain,
 and that is harmless because nothing searches that space blindly.
@@ -343,6 +361,16 @@ Trace: `route_decided`, recording destination and whether it was declared or
 inferred.
 
 11. Write to memory. Trace: `memory_written` with path and action.
+
+**Retrieval — the other half of the job.** *Ruled 2026-08-31.* "What did I say
+about the collage refs", "where are my notes on seldon", "what did you file
+yesterday" are all work, and the main agent cannot look anything up itself. It
+creates a task and spawns a **read-only worker** (`kind: "search"`) with an
+explicit search instruction — which subtrees, which terms and likely
+misspellings, and *return the matching lines with their paths, not a
+paraphrase*. Questions about **what happened** rather than what she wrote are
+answered from the trace, not the memory tree. The answer is relayed in the main
+agent's own words, with the paths, so she can go read the thing herself.
 
 ### 4.7 `others/`
 
@@ -1041,11 +1069,7 @@ and a Bismuth I can trust", and every component removed is one that can't fail.
 
 Blocking the low-level design:
 
-- **The two prompts are not written.** After stripping, they are the only
-  behavioural content in v2 (§10). Write the sub-agent one first — it is fully
-  specified by existing rulings and is what build-order step 5 needs.
-- **The main agent's intent schema is not written** (§10.2). The main agent
-  prompt cannot be completed without it.
+- *(nothing — the two blocking items below closed on 2026-08-31.)*
 
 - **Q13 — refactor `harness.py`, or a new lean process?** With watchers,
   mailbox, synthetic inbox, slash commands and coffeechat all gone, several
@@ -1056,6 +1080,13 @@ Blocking the low-level design:
 
 Closed since the last draft:
 
+- ~~**The two prompts are not written.**~~ **Closed 2026-08-31.** Written, and
+  measured: main agent 4,779 tokens total prefix, sub-agent 5,063 (§10).
+- ~~**The main agent's intent schema is not written.**~~ **Closed 2026-08-31.**
+  `prompts/v2/intent_schema.json` — eight intent types, flat objects rather than
+  a discriminated union, per-type requirements enforced by the prompt.
+- ~~**How does a tool-less main agent know which destinations exist?**~~
+  **Closed 2026-08-31.** A `DESTINATIONS` block is injected every turn (§4.6).
 - ~~**Completion notification.**~~ **Closed 2026-08-31.** The main agent owns
   the relay. Sub-agents end in `done` / `needs_input` / `failed`, and the main
   agent tells her — completion, question, or failure, all in one voice (§4.8,
@@ -1078,9 +1109,38 @@ Not blocking:
 
 ---
 
-## 10. The two prompts — what each must contain
+## 10. The two prompts
 
-**Written 2026-08-31, before either prompt exists.** After stripping (§4.9.1),
+**Both prompts now exist**, written 2026-08-31 against the checklist below:
+
+| File | What it is |
+|---|---|
+| `prompts/v2/main_agent.md` | the main agent's `--system-prompt` |
+| `prompts/v2/subagent.md` | the sub-agent's `--system-prompt` |
+| `prompts/v2/intent_schema.json` | `--json-schema` for the main agent's turn output |
+| `prompts/v2/subagent_result_schema.json` | the shape of a sub-agent's final message |
+| `prompts/v2/OUTLINE.md` | the responsibility outline they were drafted from |
+
+Measured the same way as §4.9.1 — carrier with a placeholder prompt, then the
+real file:
+
+| | carrier | with real prompt | prompt costs |
+|---|---:|---:|---:|
+| Main agent, `--tools ""` | 805 | **4,779** | 3,974 |
+| Sub-agent, `Read,Write,Edit,Bash` | 3,355 | **5,063** | 1,708 |
+
+Both carriers reproduced §4.9.1's figures exactly. Against the 27,398-token
+default spawn, the sub-agent is an **81.5% reduction**. The sub-agent spends
+57% of the 3,021-token swap budget; the main agent exceeds it by 953, which is
+recorded rather than trimmed — the budget measures a *swap*, and Claude Code's
+own prompt does none of this job.
+
+Three things the checklist below did not anticipate, added while writing:
+**retrieval** (§4.6), the **`DESTINATIONS` block** (§4.6), and the sub-agent's
+**read-back self-check**. One thing it did anticipate is now cut: the main
+agent carries no companion/brainstorming behaviour, per the scope ruling in §1.
+
+**The checklist, written 2026-08-31, before either prompt existed.** After stripping (§4.9.1),
 these two strings are the *only* behavioural content in the entire system —
 no skills, no protocols, no `soul.md`, no MCP. Everything either agent knows
 about how to act comes from here. This section is the checklist to write them
@@ -1164,10 +1224,14 @@ Must establish:
 - **Session reset on request** is deferred until the current note is fully
   processed (§4.5).
 
-**OPEN — the intent schema.** The turn returns *create / ask / clarify / spawn /
-done* as validated JSON via `--json-schema` (§4.5). That schema is not yet
-written, and the prompt cannot be finished without it, since the prompt must
-describe the shape the model is expected to emit.
+~~**OPEN — the intent schema.**~~ **Closed 2026-08-31.**
+`prompts/v2/intent_schema.json`: `{"intents": [ … ]}` performed by the runtime
+in listed order, an empty list meaning silence. Eight types — `route`,
+`task_create`, `task_ask`, `task_clarify`, `spawn`, `task_done`, `reply`,
+`session_reset`. Flat objects rather than a `oneOf` discriminated union, because
+structured-output validators handle unions inconsistently and a schema the
+runtime rejects is worse than one that under-constrains; the prompt carries the
+per-type strictness.
 
 ---
 
