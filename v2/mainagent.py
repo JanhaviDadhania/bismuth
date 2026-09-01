@@ -2,8 +2,11 @@
 
 `--tools ""` is the enforcement of the no-work rule, not a convention the
 prompt asks it to respect: an agent with no file tools cannot quietly do the
-work itself on a turn where delegating felt slow. It is also what makes it the
-cheapest process in v2 — an 805-token carrier plus the prompt.
+work itself on a turn where delegating felt slow.
+
+Measured 2026-09-01: 7,696 tokens of prefix per fresh session — 797 carrier,
+2,896 for the intent schema, 4,003 for the prompt. The schema is the second
+most expensive thing in the turn, and worth it for the reason below.
 
 The turn returns intents as validated JSON via `--json-schema`, which arrives
 in the result event's `structured_output` field, so the runtime never parses

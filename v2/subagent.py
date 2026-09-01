@@ -1,11 +1,15 @@
 """Sub-agents — §4.9, §4.9.1. `claude -p`, stripped bare.
 
-Measured on 2026-08-31: a default spawn carries 27,398 tokens of prefix before
+Re-measured 2026-09-01: a default spawn carries 26,155 tokens of prefix before
 the instruction is read, more than half of it built-in tool schemas. The
-stripped config below measures 5,063 with the real prompt — an 81.5%
-reduction. Cutting tools also removes expensive *paths*: the same one-line file
-append cost 118,011 tokens through Bash on a default spawn and 8,092 through
-Read+Edit on this one.
+stripped config below measures 4,824 — an 81.6% reduction. Of what is left,
+only 1,443 is this prompt; 2,584 is the four tool schemas and 797 is the
+irreducible carrier. Cutting tools also removes expensive *paths*: the same
+one-line file append cost 118,011 tokens through Bash on a default spawn and
+8,092 through Read+Edit on this one.
+
+(2026-08-31 measured 27,398 / 5,063. Claude Code's own defaults moved
+underneath us; the numbers are re-measured, not restated.)
 
 A sub-agent has exactly three ways to end: done, needs_input, failed. It never
 messages Janhavi; its return value is read by the main agent, which decides
