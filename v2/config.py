@@ -73,7 +73,6 @@ TELEGRAM_CHAT_ID = str(
     or _env.get("TELEGRAM_CHAT_ID")
     or ""
 )
-TELEGRAM_V1_TOKEN = _env.get("TELEGRAM_BOT_TOKEN") or ""
 POLL_TIMEOUT = int(_v2.get("poll_timeout", 25))          # long-poll seconds
 TELEGRAM_MSG_LIMIT = 4000                                 # split above this
 
@@ -90,7 +89,10 @@ ACK_TAIL = int(_v2.get("ack_tail", 10))                   # board strip
 
 SUBAGENT_TOOLS = "Read,Write,Edit,Bash"
 SUBAGENT_EFFORT = _v2.get("subagent_effort", "low")       # never thinking-off
-SUBAGENT_BUDGET_USD = float(_v2.get("subagent_budget_usd", 0.50))
+# A blast-radius bound, not a cost target. 0.50 was too tight in practice: a
+# legitimate multi-file write hit the cap *after* finishing, and the work was
+# then reported as failed and redone at full cost.
+SUBAGENT_BUDGET_USD = float(_v2.get("subagent_budget_usd", 2.00))
 SUBAGENT_TIMEOUT = int(_v2.get("subagent_timeout", 900))
 MAX_CONCURRENT_SUBAGENTS = int(_v2.get("max_concurrent_subagents", 3))
 SUBAGENT_CWD = _expand(_v2.get("subagent_cwd", "~/.bismuth/workdir"))
@@ -100,7 +102,6 @@ SUBAGENT_CWD = _expand(_v2.get("subagent_cwd", "~/.bismuth/workdir"))
 TRANSCRIBE_SCRIPT = BASE_DIR / "tools" / "transcribe.py"
 TRANSCRIBE_TIMEOUT = int(_v2.get("transcribe_timeout", 300))
 WHISPER_MODEL = _v2.get("whisper_model", "base")
-TTS_SCRIPT = BASE_DIR / "tools" / "tts.py"
 
 # ─── Trace hygiene — §5 ──────────────────────────────────────────────────────
 # No rotation, ever. The per-event size cap is the only thing bounding growth,
@@ -125,33 +126,13 @@ def ensure_dirs() -> None:
         d.mkdir(parents=True, exist_ok=True)
 
 
-def v1_is_running() -> bool:
-    """Is the v1 harness polling right now? Two getUpdates consumers on one
-    token steal each other's messages, so this is the thing that actually
-    matters — not which token v2 was given."""
-    import subprocess
-    try:
-        found = subprocess.run(["pgrep", "-f", "harness.py"],
-                               capture_output=True, text=True, timeout=10)
-        return bool(found.stdout.strip())
-    except Exception:
-        return False
-
-
 def check() -> list[str]:
     """Startup preflight. Returns a list of problems, empty if all is well."""
     problems: list[str] = []
     if not TELEGRAM_TOKEN:
         problems.append(
-            "no v2 Telegram token: set v2.telegram_bot_token in config.yaml or "
-            "BISMUTH2_TELEGRAM_BOT_TOKEN. Reusing v1's bot is fine as long as "
-            "v1 is stopped; otherwise create a second bot with @BotFather."
-        )
-    elif TELEGRAM_TOKEN == TELEGRAM_V1_TOKEN and v1_is_running():
-        problems.append(
-            "v2 has v1's bot token AND the v1 harness is running. They would "
-            "steal each other's messages — stop v1 first (§11 cutover), or use "
-            "a second bot."
+            "no Telegram token: set v2.telegram_bot_token in config.yaml or "
+            "BISMUTH2_TELEGRAM_BOT_TOKEN."
         )
     if not TELEGRAM_CHAT_ID:
         problems.append("no TELEGRAM_CHAT_ID configured")

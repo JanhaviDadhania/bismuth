@@ -28,7 +28,17 @@ def build(board, memory: Path) -> list[tuple[str, list]]:
 
     `board` is the tools.board module, passed in so this file never imports
     the renderer at module scope — the board must keep working with v2 absent.
+
+    Returns nothing when `memory` is not the tree v2 is configured for. The
+    board can be pointed anywhere with `--memory`, and v2's trace and `others/`
+    belong to exactly one tree — rendering one tree's tasks onto another's
+    board would be a quiet lie about where her work lives.
     """
+    try:
+        if Path(memory).resolve() != Path(cfg.MEMORY_DIR).resolve():
+            return []
+    except OSError:
+        return []
     proj = tasklib.fold()
     sections: list[tuple[str, list]] = []
 
