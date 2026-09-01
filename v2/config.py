@@ -49,6 +49,13 @@ TRACE_DIR = MEMORY_DIR / "trace"             # log-YYYY-MM.jsonl, never rotated
 TRACE_LOCK = RUNTIME_DIR / ".trace.lock"
 TRACE_SEQ_FILE = RUNTIME_DIR / "trace_seq"
 OTHERS_DIR = MEMORY_DIR / "others"           # the parking folder — §4.7
+
+# Reserved, machine-owned folders. `_`-prefixed, and therefore invisible to
+# DESTINATIONS by the generic rule in `destinations.py` — an ordinary note can
+# never be routed into one. That matters: if `_schedules/` were routable, the
+# main agent could file a grocery list into it and `tick()` would try to parse
+# the grocery list as a schedule.
+SCHEDULES_DIR = MEMORY_DIR / "_schedules"    # WHEN — a clock, one turn each
 AUDIO_REPO = _expand(_v2.get("audio_repo", "~/bismuth-audio"))
 
 # ─── Prompts — the only behavioural content in the system ────────────────────
@@ -114,10 +121,18 @@ TRACE_EVENT_CAP = int(_v2.get("trace_event_cap", 8_000))  # chars per field
 AUDIO_PUSH_INTERVAL = int(_v2.get("audio_push_interval", 900))
 MEMORY_SYNC_INTERVAL = int(_v2.get("memory_sync_interval", 300))
 BOARD_REFRESH_INTERVAL = int(_v2.get("board_refresh_interval", 120))
+# The background loop sleeps 5s, so this gate is what sets the real schedule
+# granularity: ~1 minute. Finer would buy nothing — `at:` is a wall-clock
+# minute, and firing is deliberately late-tolerant.
+SCHEDULE_TICK_INTERVAL = int(_v2.get("schedule_tick_interval", 60))
+# How long after firing before a missing `produces:` artifact is reported. A
+# knob and not a constant so a scratch tree can set it to 0 and exercise the
+# verification path without waiting two hours.
+SCHEDULE_OVERDUE_AFTER = int(_v2.get("schedule_overdue_after", 2 * 3600))
 
 DIRS_TO_CREATE = (
     RUNTIME_DIR, SPOOL_DIR, STAGING_DIR, STDERR_DIR, TRACE_DIR, OTHERS_DIR,
-    SUBAGENT_CWD,
+    SUBAGENT_CWD, SCHEDULES_DIR,
 )
 
 

@@ -14,7 +14,7 @@ from pathlib import Path
 from . import config as cfg
 
 SKIP_DIRS = {".git", ".harness", "__pycache__", "node_modules", ".obsidian",
-             "trace", ".bismuth", ".venv", "_archive", "_dropbox_received"}
+             "trace", ".bismuth", ".venv"}
 MAX_DEPTH = 4
 NAME_THRESHOLD = 8      # list filenames below this, a count and a sample above
 SAMPLE = 3
@@ -32,7 +32,13 @@ def scan(root: Path | None = None) -> dict:
         if not path.is_dir():
             continue
         rel_parts = path.relative_to(root).parts
-        if any(p in SKIP_DIRS or p.startswith(".") for p in rel_parts):
+        # `_`-prefixed folders are reserved for the machine — `_schedules/`,
+        # `_tools/`, `_archive/`, `_dropbox_received/`. Excluding them
+        # generically, rather than by name, means every future machine-owned
+        # folder is reserved the moment it is created: an ordinary note can
+        # never be routed into one, so `tick()` can never be handed a grocery
+        # list to parse as a schedule.
+        if any(p in SKIP_DIRS or p[:1] in "._" for p in rel_parts):
             continue
         if len(rel_parts) > MAX_DEPTH:
             continue
@@ -101,9 +107,11 @@ def resolve(destination: str, root: Path | None = None) -> Path | None:
         return None
     candidate = (root / destination.lstrip("/")).resolve()
     try:
-        candidate.relative_to(root.resolve())
+        rel_parts = candidate.relative_to(root.resolve()).parts
     except ValueError:
         return None                      # escaped the memory tree
+    if any(p[:1] in "._" for p in rel_parts):
+        return None                      # reserved for the machine — see scan()
     if candidate.exists():
         return candidate
     if candidate.suffix and candidate.parent.exists():

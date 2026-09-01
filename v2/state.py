@@ -28,6 +28,11 @@ def default_state() -> dict:
         "session": None,         # {id, started_at, window_size, tokens}
         "pending_reset": None,   # deferred session reset (§4.5)
         "retry": [],             # visible retry queue — never a silent drop
+        # {name: {last_fired, last_fired_at, overdue_flagged}} — written in the
+        # SAME mutate() block as the schedule's enqueue, which is the whole
+        # reason it lives here and not in the schedule's frontmatter. Tier 1 but
+        # tiny: losing it costs one duplicate run, never lost work.
+        "schedules": {},
     }
 
 
@@ -86,16 +91,28 @@ def mutate():
 
 # ─── the turn queue — the one piece of state with no rebuild path ────────────
 
+def prepare_turn(item: dict) -> dict:
+    """Stamp a turn input, without enqueueing it.
+
+    Split out so a caller that must append to `turn_queue` and change something
+    else in the SAME `mutate()` block can do so — `mutate()` cannot nest
+    (a second `flock` on a fresh fd for the same file would deadlock), and
+    `schedules.tick()` needs exactly that atomicity: the enqueue and the
+    `last_fired` mark are one write or the run is either lost or duplicated.
+    """
+    item = dict(item)
+    item.setdefault("queued_at", time.time())
+    item.setdefault("item_id", uuid.uuid4().hex[:12])
+    return item
+
+
 def enqueue_turn(item: dict) -> None:
     """Durably append one turn input. For sub-agent results this MUST happen
     before the sub-agent's process is reaped: the write is the commit point
     (§6). Lose this and a finished worker's result never reaches the agent and
     its task hangs in `working` forever."""
-    item = dict(item)
-    item.setdefault("queued_at", time.time())
-    item.setdefault("item_id", uuid.uuid4().hex[:12])
     with mutate() as s:
-        s["turn_queue"].append(item)
+        s["turn_queue"].append(prepare_turn(item))
 
 
 def dequeue_turn() -> dict | None:
