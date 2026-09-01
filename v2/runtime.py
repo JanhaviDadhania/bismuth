@@ -14,7 +14,8 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
 from . import config as cfg
-from . import archive, destinations, gitsync, ingest, intents, mainagent, state, subagent, tasks, tg
+from . import (archive, destinations, gitsync, ingest, intents, mainagent,
+               schedules, state, subagent, tasks, tg, tools_catalog)
 from .intents import SpawnRequest
 from .tasks import Projection
 from .trace import Trace
@@ -159,19 +160,45 @@ class Runtime:
             self.poller.stop()
 
     def _background(self) -> None:
-        last_audio = last_memory = last_board = 0.0
+        """The clock. Four independent checks on one 5s loop.
+
+        **Each is wrapped separately, and that is not defensive habit.** One
+        uncaught exception here kills the whole thread, and with it audio
+        archiving, the memory git sync and the board — silently, since nothing
+        else watches this thread. That was already latent; `_schedules/` makes
+        it live, because a hand-edited schedule file can throw in `parse()`.
+        A check that fails is traced and retried on its next interval; it can
+        no longer take the other three down with it.
+        """
+        last = {"audio": 0.0, "memory": 0.0, "board": 0.0, "schedules": 0.0}
+        checks = (
+            ("audio", cfg.AUDIO_PUSH_INTERVAL, lambda: archive.push(self.trace)),
+            ("memory", cfg.MEMORY_SYNC_INTERVAL, lambda: gitsync.sync(self.trace)),
+            ("board", cfg.BOARD_REFRESH_INTERVAL, self.refresh_board),
+            ("schedules", cfg.SCHEDULE_TICK_INTERVAL, self._schedule_tick),
+        )
         while self.running:
             now = time.time()
-            if now - last_audio > cfg.AUDIO_PUSH_INTERVAL:
-                archive.push(self.trace)
-                last_audio = now
-            if now - last_memory > cfg.MEMORY_SYNC_INTERVAL:
-                gitsync.sync(self.trace)
-                last_memory = now
-            if now - last_board > cfg.BOARD_REFRESH_INTERVAL:
-                self.refresh_board()
-                last_board = now
+            for name, interval, run in checks:
+                if now - last[name] <= interval:
+                    continue
+                last[name] = now
+                try:
+                    run()
+                except Exception as exc:
+                    self.trace.append("background_check_failed", check=name,
+                                      error=str(exc)[:600])
             time.sleep(5)
+
+    def _schedule_tick(self) -> None:
+        """Fire what is due, then ask whether the last firing actually produced
+        the file it promised. `self.wake.set()` so the main loop picks the turn
+        up now instead of waiting out its 2s timeout — schedules do not
+        preempt, but they should not idle either."""
+        fired = schedules.tick(self.trace)
+        overdue = schedules.check_overdue(self.trace)
+        if fired or overdue:
+            self.wake.set()
 
     def refresh_board(self) -> None:
         import subprocess
@@ -185,15 +212,19 @@ class Runtime:
 
     def process_turn(self, item: dict) -> None:
         session, is_new = self._session()
-        fingerprint = destinations.fingerprint()
+        # One fingerprint over the memory tree AND the tool catalog. Folding
+        # them is simpler than a parallel flag, and either changing is the same
+        # event as far as the turn is concerned: something the agent was told
+        # exists no longer matches reality.
+        fingerprint = f"{destinations.fingerprint()}+{tools_catalog.fingerprint()}"
         changed = self.dest_fingerprint is not None and fingerprint != self.dest_fingerprint
-        include_dest = is_new or changed
-        if include_dest:
+        include_ctx = is_new or changed
+        if include_ctx:
             self.dest_fingerprint = fingerprint
 
         result = mainagent.run_turn(
             item, self.proj, session_id=session["id"], is_new=is_new,
-            include_destinations=include_dest, destinations_changed=changed,
+            include_context=include_ctx, context_changed=changed,
             trace=self.trace)
 
         if result.error:

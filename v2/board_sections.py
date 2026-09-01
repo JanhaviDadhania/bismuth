@@ -13,7 +13,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from . import config as cfg
+from . import schedules as schedlib
 from . import tasks as tasklib
+from .trace import Trace
 
 
 def _card(board, cid: str, title: str, items: list[dict], meta: str):
@@ -81,6 +83,11 @@ def build(board, memory: Path) -> list[tuple[str, list]]:
             cards=[_card(board, "v2:others", f"Parked ({len(parked)})", items,
                          f"{len(parked)} parked")])]))
 
+    # ─── schedules — the clock, and whether it landed ───────────────────────
+    sched_section = _schedules(board)
+    if sched_section:
+        sections.append(sched_section)
+
     # ─── secondary strip: acks and recently done ───────────────────────────
     strip = []
     acks = proj.acks[-cfg.ACK_TAIL:]
@@ -105,3 +112,58 @@ def build(board, memory: Path) -> list[tuple[str, list]]:
             cards=strip)]))
 
     return sections
+
+
+def _schedule_runs() -> tuple[dict, dict]:
+    """Last firing and last overdue complaint per schedule, **folded from the
+    trace**.
+
+    Not from `state.json`, even though `state.json` holds `last_fired` and
+    reading it would be one line. The board holds no state of its own and reads
+    only the record, so it can never disagree with it — and `schedules.tick()`
+    writes the trace event and the state mark in the same breath, so there is
+    nothing here the trace does not know.
+    """
+    fired: dict[str, dict] = {}
+    overdue: dict[str, dict] = {}
+    for event in Trace.iter_events({"schedule_fired", "schedule_overdue"}):
+        name = event.get("schedule")
+        if not name:
+            continue
+        (fired if event["type"] == "schedule_fired" else overdue)[name] = event
+    return fired, overdue
+
+
+def _schedules(board):
+    """One panel: every schedule, its cadence, when it last ran, and whether
+    that run left the file it promised."""
+    scheds = schedlib.load_all()
+    if not scheds:
+        return None
+    fired, overdue = _schedule_runs()
+
+    items, late = [], 0
+    for s in sorted(scheds, key=lambda s: (not s.enabled, s.name)):
+        run = fired.get(s.name) or {}
+        ran = (run.get("fired_at") or "")[:16].replace("T", " ") or "never"
+        bad = overdue.get(s.name, {}).get("fired") == run.get("fired_at", "")[:10]
+        if not s.enabled:
+            text = f"{s.name} — paused · {s.cadence()}"
+        elif bad:
+            text = f"{s.name} — {s.cadence()} · ran {ran}, produced nothing"
+            late += 1
+        else:
+            text = f"{s.name} — {s.cadence()} · last ran {ran}"
+        items.append({"text": text, "done": s.enabled and not bad
+                      and bool(run), "who": ""})
+
+    live = [s for s in scheds if s.enabled]
+    subtitle = f"{len(live)} running"
+    if late:
+        subtitle += f" · {late} produced nothing"
+    if len(scheds) - len(live):
+        subtitle += f" · {len(scheds) - len(live)} paused"
+    return ("SCHEDULES", [board.Group(
+        gid="v2schedules", title="Schedules", kind="now", subtitle=subtitle,
+        cards=[_card(board, "v2:schedules", f"On a clock ({len(scheds)})",
+                     items, subtitle)])])

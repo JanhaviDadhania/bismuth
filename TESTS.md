@@ -28,6 +28,16 @@ changed. The board (`open ~/bismuth-memory/board.html`) refreshes every 2 min.
 | 8 | send something unreadable (a sticker) | parked and surfaced — never silently dropped |
 | 9 | 3 notes in 10 seconds | one turn each, in order, no batching, nothing lost |
 | 10 | let it run past 40% of the window | `session_reset reason=context_40pct`, and the task list survives it |
+| 11 | "every morning at 8, remind me to take my meds" | `schedule_created` → a file in `_schedules/` → **she is told the cadence and the path**, always |
+| 12 | "pause that" | `schedule_updated` enabled=false. The file stays; `python3 -m v2 schedules` shows `[paused]` |
+| 13 | `python3 -m v2 fire <name>` | the SYSTEM turn end to end. The worker instruction must say *read this file* — **not** a retyped copy of its body |
+| 14 | delete the artifact of a schedule that has `produces:`, wait 2h | `schedule_overdue` → she is told **once**, not once a minute |
+| 15 | "add silicon-browser as a tool" | a worker investigates and writes `_tools/silicon-browser.md`; the card's commands come from `--help`, not from memory |
+| 16 | "install robot-io" | the worker proposes the command and **stops**; she is asked before anything touches the machine |
+
+Schedules and tools are files in reserved `_` folders, so #11–16 leave
+something you can open and hand-edit. If a schedule looks wrong, fix the
+markdown — there is no code path to change.
 
 **The property under test in all of them is the same one:** nothing she says is
 lost, and every failure is visible somewhere she looks. A message may fail; it

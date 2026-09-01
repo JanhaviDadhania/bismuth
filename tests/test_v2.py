@@ -7,7 +7,6 @@ nothing touches her real memory, and no test spends money on `claude -p`.
 
 from __future__ import annotations
 
-import importlib
 import json
 import os
 import sys
@@ -17,27 +16,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-
-@pytest.fixture()
-def v2(tmp_path, monkeypatch):
-    """A whole v2 pointed at a temp tree, with its modules reloaded so the
-    path constants pick up the overrides."""
-    monkeypatch.setenv("BISMUTH2_RUNTIME_DIR", str(tmp_path / "rt"))
-    monkeypatch.setenv("BISMUTH2_MEMORY_DIR", str(tmp_path / "mem"))
-    (tmp_path / "mem" / "projects" / "the_mirror").mkdir(parents=True)
-    (tmp_path / "mem" / "projects" / "the_mirror" / "nexttodo.md").write_text("# next\n")
-    (tmp_path / "mem" / "reminders.md").write_text("# reminders\n")
-
-    import v2.config as config
-    importlib.reload(config)
-    mods = {}
-    for name in ("trace", "state", "tasks", "destinations", "intents",
-                 "subagent", "mainagent", "ingest"):
-        module = importlib.import_module(f"v2.{name}")
-        mods[name] = importlib.reload(module)
-    mods["config"] = config
-    config.ensure_dirs()
-    return type("V2", (), mods)
+# The `v2` fixture lives in conftest.py — test_v2_schedules.py needs it too.
 
 
 # ─── trace — §5 ─────────────────────────────────────────────────────────────
@@ -217,18 +196,29 @@ def test_spawn_command_is_the_stripped_one(v2):
 def test_destinations_block_is_sent_once_per_session_not_per_turn(v2):
     proj = v2.tasks.fold([])
     with_block = v2.mainagent.build_turn_input({"kind": "note", "text": "hi"},
-                                               proj, include_destinations=True)
+                                               proj, include_context=True)
     without = v2.mainagent.build_turn_input({"kind": "note", "text": "hi"},
-                                            proj, include_destinations=False)
+                                            proj, include_context=False)
     assert "DESTINATIONS" in with_block and "DESTINATIONS" not in without
     assert "TASKS" in without and "NOTE" in without
+
+
+def test_tools_block_rides_the_same_gate_as_destinations(v2):
+    """One flag, not two — and one fingerprint, so a tool appearing re-sends
+    the pair rather than needing a parallel mechanism."""
+    proj = v2.tasks.fold([])
+    gated = v2.mainagent.build_turn_input({"kind": "note", "text": "hi"}, proj,
+                                          include_context=True)
+    ungated = v2.mainagent.build_turn_input({"kind": "note", "text": "hi"}, proj,
+                                            include_context=False)
+    assert "TOOLS" in gated and "TOOLS" not in ungated
 
 
 def test_subagent_result_is_labelled_as_unseen_by_her(v2):
     block = v2.mainagent.build_turn_input(
         {"kind": "subagent_result", "task_id": "t_1", "subagent_id": "sa_1",
          "instruction": "append X", "result": "status: failed"},
-        v2.tasks.fold([]), include_destinations=False)
+        v2.tasks.fold([]), include_context=False)
     assert "She has not seen this" in block
 
 
