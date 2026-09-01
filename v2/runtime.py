@@ -15,7 +15,7 @@ from dataclasses import dataclass
 
 from . import config as cfg
 from . import (archive, destinations, gitsync, ingest, intents, mainagent,
-               schedules, state, subagent, tasks, tg)
+               schedules, state, subagent, tasks, tg, tools_catalog)
 from .intents import SpawnRequest
 from .tasks import Projection
 from .trace import Trace
@@ -212,15 +212,19 @@ class Runtime:
 
     def process_turn(self, item: dict) -> None:
         session, is_new = self._session()
-        fingerprint = destinations.fingerprint()
+        # One fingerprint over the memory tree AND the tool catalog. Folding
+        # them is simpler than a parallel flag, and either changing is the same
+        # event as far as the turn is concerned: something the agent was told
+        # exists no longer matches reality.
+        fingerprint = f"{destinations.fingerprint()}+{tools_catalog.fingerprint()}"
         changed = self.dest_fingerprint is not None and fingerprint != self.dest_fingerprint
-        include_dest = is_new or changed
-        if include_dest:
+        include_ctx = is_new or changed
+        if include_ctx:
             self.dest_fingerprint = fingerprint
 
         result = mainagent.run_turn(
             item, self.proj, session_id=session["id"], is_new=is_new,
-            include_destinations=include_dest, destinations_changed=changed,
+            include_context=include_ctx, context_changed=changed,
             trace=self.trace)
 
         if result.error:

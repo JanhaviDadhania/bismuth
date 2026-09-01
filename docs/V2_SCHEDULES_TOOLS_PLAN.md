@@ -1,8 +1,9 @@
 # Bismuth v2 — Schedules & Tools Plan
 
-Status: **Part A built 2026-09-01. Part B (the tool catalog) not started —
-it waits for robot-io.** Owner: Janhavi. Bismuth implements; Janhavi confirms
-each decision.
+Status: **Both parts built 2026-09-01.** The example cards below were **not**
+written — Janhavi: *"I will ask bismuth via telegram and it should do it on its
+own."* That is decision 9 exercised: cards are a worker's job, and the first
+real test of Part B is her asking for one. Owner: Janhavi.
 
 Companion to `V2_REQUIREMENTS.md` (which holds the decision log) and
 `V2_ARCHITECTURE.md` (which describes the shipped runtime). Nothing here is

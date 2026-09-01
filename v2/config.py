@@ -56,6 +56,7 @@ OTHERS_DIR = MEMORY_DIR / "others"           # the parking folder — §4.7
 # main agent could file a grocery list into it and `tick()` would try to parse
 # the grocery list as a schedule.
 SCHEDULES_DIR = MEMORY_DIR / "_schedules"    # WHEN — a clock, one turn each
+TOOLS_DIR = MEMORY_DIR / "_tools"            # WHAT WITH — a card a worker reads
 AUDIO_REPO = _expand(_v2.get("audio_repo", "~/bismuth-audio"))
 
 # ─── Prompts — the only behavioural content in the system ────────────────────
@@ -132,7 +133,7 @@ SCHEDULE_OVERDUE_AFTER = int(_v2.get("schedule_overdue_after", 2 * 3600))
 
 DIRS_TO_CREATE = (
     RUNTIME_DIR, SPOOL_DIR, STAGING_DIR, STDERR_DIR, TRACE_DIR, OTHERS_DIR,
-    SUBAGENT_CWD, SCHEDULES_DIR,
+    SUBAGENT_CWD, SCHEDULES_DIR, TOOLS_DIR,
 )
 
 

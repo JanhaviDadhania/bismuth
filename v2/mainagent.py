@@ -21,7 +21,7 @@ import time
 from dataclasses import dataclass, field
 
 from . import config as cfg
-from . import destinations, state, tasks
+from . import destinations, state, tasks, tools_catalog
 from .tasks import Projection
 from .trace import Trace
 
@@ -55,21 +55,25 @@ def render_others_block(limit: int = 20) -> str:
     return "\n".join(lines)
 
 
-def build_turn_input(item: dict, proj: Projection, *, include_destinations: bool,
-                     destinations_changed: bool = False) -> str:
+def build_turn_input(item: dict, proj: Projection, *, include_context: bool,
+                     context_changed: bool = False) -> str:
     """Assemble the labelled blocks the prompt documents.
 
     DESTINATIONS is ~3.2k tokens, so it is sent on the first turn of a session
-    and again only if the tree changed — not every turn. TASKS is sent every
-    turn, which is what makes the 40% session reset survivable: the state was
-    never held inside the session (§4.8).
+    and again only if the tree changed — not every turn. TOOLS rides the same
+    gate on one shared fingerprint rather than a second flag: it is ~15 tokens
+    a tool, and re-sending DESTINATIONS on the rare tool addition costs less
+    than a tool she just asked for staying invisible until the next reset.
+    TASKS is sent every turn, which is what makes the 40% session reset
+    survivable: the state was never held inside the session (§4.8).
     """
     blocks: list[str] = []
 
-    if include_destinations:
+    if include_context:
         header = ("DESTINATIONS — the memory tree changed since the last turn; "
-                  "this replaces the earlier list.\n" if destinations_changed else "")
+                  "this replaces the earlier list.\n" if context_changed else "")
         blocks.append(header + destinations.render())
+        blocks.append(tools_catalog.render())
 
     blocks.append(tasks.render_tasks_block(proj))
     blocks.append(tasks.render_recent_block(proj, cfg.DONE_TAIL))
@@ -111,12 +115,12 @@ def _command(turn_input: str, session_id: str, is_new: bool) -> list[str]:
 
 
 def run_turn(item: dict, proj: Projection, *, session_id: str, is_new: bool,
-             include_destinations: bool, destinations_changed: bool = False,
+             include_context: bool, context_changed: bool = False,
              trace: Trace | None = None) -> TurnResult:
     tr = trace or Trace()
     turn_input = build_turn_input(item, proj,
-                                  include_destinations=include_destinations,
-                                  destinations_changed=destinations_changed)
+                                  include_context=include_context,
+                                  context_changed=context_changed)
     started = time.time()
     trace_id = item.get("trace_id")
     result_obj = None

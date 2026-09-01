@@ -1189,3 +1189,51 @@ Confirmed by Janhavi before any code was written, from the list at the foot of
   digest lands late rather than never — but only if bismuth is running at some
   point that day. A launchd job for bismuth itself is still not built, and it is
   the thing standing between "most mornings" and "every morning".
+
+## Decisions — 2026-09-01 (the tool catalog, Part B)
+
+- **2026-09-01 — Bismuth writes its own tool cards. Nobody hand-writes them.**
+  Janhavi: *"i don't want you to add silicon browser. I will ask bismuth via
+  telegram and it should do it on its own. same for robot-io."* So Part B
+  shipped as machinery only: `_tools/` exists and is empty, and the plan's two
+  example cards were deliberately not created. This is decision 9 taken at its
+  word — a card needs investigation, investigation is a worker's job, and a card
+  written by hand is a card nobody verified. Her asking for silicon-browser on
+  Telegram is the first real test of the feature.
+
+- **2026-09-01 — The empty catalog still names its folder.** `render()` returns
+  two lines pointing at `_tools/` rather than nothing. On the very first *"add
+  silicon-browser as a tool"* there is no existing card to copy a path from, and
+  an agent with no tools cannot go looking — so it would have to construct the
+  path from the memory root and hope. Same reasoning as DESTINATIONS: hand it
+  the real path. ~25 tokens, and only on gated turns.
+
+- **2026-09-01 — TOOLS rides the DESTINATIONS gate on one folded fingerprint.**
+  `f"{destinations.fingerprint()}+{tools_catalog.fingerprint()}"`. One flag, not
+  two. Either changing is the same event as far as a turn is concerned:
+  something the agent was told exists no longer matches reality. The cost — 
+  re-sending DESTINATIONS' 3.2k on the rare tool addition — is negligible
+  against a tool she just asked for being invisible until the next reset.
+  `include_destinations` was renamed `include_context` because it now gates
+  both, and a parameter that lies is worse than a rename.
+
+- **2026-09-01 — `_tools/` is unroutable but writable, and that asymmetry is
+  load-bearing.** `destinations.resolve()` rejects it, so no note can ever be
+  filed into `_tools/` by a `route` intent. But a `spawn` instruction is prose
+  and the worker has `Write`, so a deliberate *"go investigate silicon-browser
+  and write its card"* works. Reserved means "not a routing destination", not
+  "read-only".
+
+- **2026-09-01 — Installing is not describing, and the prompt separates them.**
+  Writing a card is a file write a worker does freely. `pip install` /
+  `brew install` changes her machine and needs her explicit yes: the worker puts
+  the proposed command in the card and stops, the main agent asks, and a second
+  worker runs it on confirmation. Never inside another instruction.
+
+- **2026-09-01 — The plan was wrong that there is no test suite.**
+  `tests/test_v2.py` and `tests/test_v2_board.py` exist and 48 tests passed
+  throughout. A9 (`fire`) is still justified — nothing covered a SYSTEM turn,
+  and no test spends money on `claude -p` — but "there is no test suite" was
+  false, and the 132 assertions written for this work would have been thrown
+  away on that basis. They are now `tests/test_v2_schedules.py` (40 tests), with
+  the shared fixture lifted into `tests/conftest.py`. Suite: 48 → 89.

@@ -67,10 +67,11 @@ class Schedule:
 
 # ─── parsing — never fatal (§ the same rule as tool cards) ───────────────────
 
-def _frontmatter(text: str) -> dict:
+def frontmatter(text: str) -> dict:
     """The `---` block at the top, as a dict. Raises on malformed YAML; every
     caller catches, because a hand-edited schedule must not be able to take the
-    background thread down with it."""
+    background thread down with it. Shared with `tools_catalog.py`, which reads
+    the same shape of card out of the other reserved folder."""
     if not text.startswith("---"):
         raise ValueError("no frontmatter block")
     end = text.find("\n---", 3)
@@ -127,7 +128,7 @@ def parse_text(name: str, text: str, path: Path) -> Schedule:
     about to write through this first, so a schedule that would not load is
     never committed — the runtime writes schedules precisely because they must
     not fail."""
-    meta = _frontmatter(text)
+    meta = frontmatter(text)
     every, n = _parse_every(meta.get("every"), meta)
     days_raw = meta.get("days") or []
     if isinstance(days_raw, str):
