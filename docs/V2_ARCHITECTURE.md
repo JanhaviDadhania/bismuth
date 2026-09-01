@@ -656,10 +656,13 @@ need terminal tool and browser and that's it."*
 - `Read`, `Write`, `Edit` — the memory writes, which are the whole job.
 - `Bash` — the terminal. It is the most expensive schema of the four and it is
   the one that lets a sub-agent wander, but she keeps it deliberately.
-- **The browser needs no tool.** `silicon` is a CLI at `~/.local/bin/silicon`
-  (`silicon browser [name]` opens a headed browser), so `Bash` already reaches
-  it. This is the reason **zero MCP servers are needed** — the one capability
-  that looked like it required one turned out to be a command.
+- **No browser, and no MCP server for one.** The capability that looked like
+  it needed an MCP server is a command — `silicon-browser`, terminal-native and
+  non-interactive — so `Bash` reaches it if an instruction ever names it. It is
+  deliberately *not* in the sub-agent prompt: workers are memory-filers
+  (decision 2026-09-01). Note `silicon browser [name]`, the fleet-manager
+  subcommand, is a different program and is a headed login helper; it was named
+  here in error until 2026-09-01.
 
 **No skills.** *Ruled 2026-08-31: "I don't need any skill."* v1's skill
 scaffolding does not apply to a sub-agent that receives a complete instruction.
@@ -1166,10 +1169,9 @@ Must establish:
   improvements, no refactoring the file it was asked to append one line to.
 - **The instruction is complete.** It will name absolute paths, exact text, and
   the operation (§4.9). It does not need to infer intent, and should not try.
-- **It has four tools** — `Read`, `Write`, `Edit`, `Bash` — and `Bash` reaches
-  the `silicon` CLI for browser work (§4.9.1). Prefer `Read`+`Edit` over
-  shelling out; the measured cost of choosing `Bash` for a file append was 118k
-  tokens against 8k (§4.9.1).
+- **It has four tools** — `Read`, `Write`, `Edit`, `Bash`. Prefer `Read`+`Edit`
+  over shelling out; the measured cost of choosing `Bash` for a file append was
+  118k tokens against 8k (§4.9.1).
 - **It ends in exactly one of three states** — `done`, `needs_input`, `failed`
   (§4.9). The terminal status is the entire protocol.
 - **`needs_input` means exit, carrying the question as the return value.** It

@@ -669,10 +669,9 @@ sub-agents. Not revisited in v2. See the fixed-stack decision below.
 - **2026-08-31 — Sub-agent tool set is exactly `Read,Write,Edit,Bash`.**
   Janhavi: *"I just need terminal tool and browser and that's it. browser is
   silicon browser."* Read/Write/Edit are the memory writes. Bash is the
-  terminal. **The browser needs no tool and no MCP server**: `silicon` is a CLI
-  at `~/.local/bin/silicon` (`silicon browser [name]`), so Bash already reaches
-  it — the one capability that looked like it needed an MCP server turned out
-  to be a command. Per-tool schema cost above the 805 floor: Edit 348,
+  terminal. **The browser needs no tool and no MCP server** — a command
+  reaches it. (The command named here was wrong; corrected 2026-09-01 below.)
+  Per-tool schema cost above the 805 floor: Edit 348,
   Write 522, Read 608, Bash 1,358. Bash is the most expensive of the four and
   the one that lets a sub-agent wander; kept deliberately, with the cost
   recorded rather than argued.
@@ -1019,3 +1018,30 @@ assumed. The code is `v2/`, tests are `tests/test_v2.py`.
 - **2026-09-01 — `bismuth-audio` has a remote and is pushing.**
   `github.com/JanhaviDadhania/bismuth-audio`, private, 3 voice notes archived
   and pushed on the first run.
+
+- **2026-09-01 — The browser line named the wrong binary, and the sub-agent
+  prompt now has no browser at all.** Two programs share the word *silicon*.
+  `silicon browser [name]` is a subcommand of the **fleet manager** at
+  `~/.local/bin/silicon`; its own help reads *"Open headed browser for login"* —
+  a headed, interactive helper so a *human* can log in and persist cookies into
+  an instance profile. It needs a *running* instance, and the local one is
+  broken anyway: the registry maps `silicon` to `/Users/janhavidadhania/bismuth/silicon`,
+  a path that does not exist. A worker running it would have opened a window on
+  her laptop and blocked until the 900s timeout — which the *"Nothing
+  interactive"* rule three lines below it already forbade. The 2026-08-31 entry
+  above recorded the capability correctly and the command incorrectly.
+
+  The thing that actually does the job is a **different, separately installed
+  CLI**: `silicon-browser` (`/opt/homebrew/bin/silicon-browser`, v0.25.6, also
+  aliased `agent-browser`) — *"the most reliable browser for your AI agent —
+  stealth-first, terminal-native"*. It is healthy and running: daemon up since
+  19 Aug, Chrome 147 + CloakBrowser under `~/.silicon-browser/browsers/`, a
+  logged-in profile at `~/.silicon-browser/profiles/silicon`. It is
+  non-interactive by design (`open <url>` → `snapshot -i` for `@e1` refs →
+  `click @e1` / `get text`), chains with `&&`, and keeps the page between calls.
+
+  **Decision: leave it out of the sub-agent prompt entirely.** Janhavi, asked
+  directly: *"Leave it out."* Workers are memory-filers — read, write, edit,
+  shell. `Bash` still reaches `silicon-browser` if an instruction ever names
+  it, so nothing is lost; it simply is not a standing capability, and the ~80
+  tokens are not spent on every spawn.

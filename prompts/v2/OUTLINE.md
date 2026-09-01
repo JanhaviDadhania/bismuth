@@ -33,7 +33,7 @@ V2_ARCHITECTURE; NEW = my proposal, not ruled; OPEN = needs your call.
 ### 4. Tools
 - four: Read, Write, Edit, Bash (§4.9.1)
 - prefer Read+Edit over shelling out — measured 8k vs 118k tokens for one append
-- Bash is the terminal; browser is `silicon browser` via Bash, not an MCP server
+- Bash is the terminal; no browser, and no MCP server (decision 2026-09-01)
 
 ### 5. What it does not have
 - no protocols, no skills, no soul.md, no memory-tree knowledge, no MCP
