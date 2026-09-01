@@ -125,19 +125,33 @@ def ensure_dirs() -> None:
         d.mkdir(parents=True, exist_ok=True)
 
 
+def v1_is_running() -> bool:
+    """Is the v1 harness polling right now? Two getUpdates consumers on one
+    token steal each other's messages, so this is the thing that actually
+    matters — not which token v2 was given."""
+    import subprocess
+    try:
+        found = subprocess.run(["pgrep", "-f", "harness.py"],
+                               capture_output=True, text=True, timeout=10)
+        return bool(found.stdout.strip())
+    except Exception:
+        return False
+
+
 def check() -> list[str]:
     """Startup preflight. Returns a list of problems, empty if all is well."""
     problems: list[str] = []
     if not TELEGRAM_TOKEN:
         problems.append(
             "no v2 Telegram token: set v2.telegram_bot_token in config.yaml or "
-            "BISMUTH2_TELEGRAM_BOT_TOKEN. v2 needs its OWN bot token — sharing "
-            "v1's means two getUpdates consumers stealing each other's messages."
+            "BISMUTH2_TELEGRAM_BOT_TOKEN. Reusing v1's bot is fine as long as "
+            "v1 is stopped; otherwise create a second bot with @BotFather."
         )
-    elif TELEGRAM_TOKEN == TELEGRAM_V1_TOKEN:
+    elif TELEGRAM_TOKEN == TELEGRAM_V1_TOKEN and v1_is_running():
         problems.append(
-            "v2 is configured with v1's bot token. Stop v1 first, or use a "
-            "second bot (§11)."
+            "v2 has v1's bot token AND the v1 harness is running. They would "
+            "steal each other's messages — stop v1 first (§11 cutover), or use "
+            "a second bot."
         )
     if not TELEGRAM_CHAT_ID:
         problems.append("no TELEGRAM_CHAT_ID configured")

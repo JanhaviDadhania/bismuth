@@ -930,3 +930,28 @@ assumed. The code is `v2/`, tests are `tests/test_v2.py`.
   her answer draining it into a folder created after the session started, a
   full task lifecycle with `task_done`, and a retrieval query answered with the
   quoted line and its path. All traced, all ordered, no gaps.
+
+## Decisions — 2026-09-01
+
+- **2026-09-01 — v2 runs on v1's bot. The §11 second-token rule was the wrong
+  guard.** §11 said build against a second bot token because v1 and v2 cannot
+  both long-poll `getUpdates` at once, and `config.check()` enforced that by
+  refusing v1's token outright. That is the wrong test: what breaks is two
+  *processes* polling one token, not which token v2 holds. The v1 harness was
+  already stopped, so the constraint did not apply. `check()` now blocks only
+  when `harness.py` is actually running (`pgrep`), and otherwise allows the
+  reuse. Effect: the §11 step-10 cutover happened early and for free, because
+  there was nothing left to cut over from. Bot is `budee123bot`; the token
+  lives in `config.yaml`, which is gitignored.
+
+- **2026-09-01 — Issue #19 closed itself.** The trace lives at
+  `~/bismuth-memory/trace/`, so the runtime's own git loop commits and pushes
+  it — first observed at `86a1c4f`. The deferred "move the trace under version
+  control so it is genuinely permanent" item needed no work; it fell out of
+  putting the trace inside the memory repo.
+
+- **2026-09-01 — `~/bismuth-audio` initialised locally, with no remote.**
+  Voice notes archive into `YYYY/MM/` immediately; pushes are traced no-ops
+  until a private GitHub repo exists and `origin` is set. This is the intended
+  degradation, not a gap: archiving is off the critical path, so a note is
+  never blocked, delayed or failed by the archive.
