@@ -18,8 +18,8 @@ _v2 = _cfg.get("v2") or {}
 _env = _cfg.get("env") or {}
 
 # Test/scratch override. Set both to point a whole v2 at a throwaway tree —
-# used by the test suite, and by `python3 -m v2.smoke`, so nothing rehearses
-# against her real memory.
+# used by `tests/conftest.py` and by the offline commands (`feed`, `fire`,
+# `overdue`), so nothing rehearses against her real memory.
 if os.environ.get("BISMUTH2_MEMORY_DIR"):
     MEMORY_DIR = Path(os.path.expanduser(os.environ["BISMUTH2_MEMORY_DIR"])).resolve()
 
