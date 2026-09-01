@@ -119,7 +119,15 @@ def _parse_every(raw, meta: dict) -> tuple[str, int]:
 
 def parse(path: Path) -> Schedule:
     """One file to one Schedule. Raises; callers log and skip."""
-    meta = _frontmatter(path.read_text())
+    return parse_text(path.stem, path.read_text(), path)
+
+
+def parse_text(name: str, text: str, path: Path) -> Schedule:
+    """The parse, off the disk. `create()` and `update()` run the file they are
+    about to write through this first, so a schedule that would not load is
+    never committed — the runtime writes schedules precisely because they must
+    not fail."""
+    meta = _frontmatter(text)
     every, n = _parse_every(meta.get("every"), meta)
     days_raw = meta.get("days") or []
     if isinstance(days_raw, str):
@@ -130,7 +138,7 @@ def parse(path: Path) -> Schedule:
             raise ValueError(f"days: {d!r} is not a weekday")
     budget = meta.get("budget_usd")
     return Schedule(
-        name=path.stem,
+        name=name,
         path=path,
         every=every,
         at=_parse_at(meta.get("at", "09:00")),
@@ -164,6 +172,87 @@ def load_all(trace: Trace | None = None) -> list[Schedule]:
 
 def get(name: str, trace: Trace | None = None) -> Schedule | None:
     return next((s for s in load_all(trace) if s.name == name), None)
+
+
+# ─── writing one ────────────────────────────────────────────────────────────
+# Schedules are written by the **runtime**, tool cards by a **worker**, and the
+# split is not arbitrary. A card needs investigation — run `--help`, read the
+# README, write down what actually happened — which is long-form work that
+# benefits from exploration. A schedule is a handful of structured fields that
+# must be written reliably. Long-form that benefits from exploration → worker.
+# Short structured data that must not fail → runtime.
+
+FIELD_ORDER = ("every", "at", "days", "enabled", "budget_usd", "produces",
+               "min_bytes", "summary")
+
+
+def _yv(value) -> str:
+    """One frontmatter value, quoted by yaml so a summary containing a colon
+    cannot break the file it is written into."""
+    import yaml
+    return yaml.safe_dump(value, default_flow_style=True,
+                          allow_unicode=True).strip().removesuffix("...").strip()
+
+
+def render_file(fields: dict, body: str) -> str:
+    lines = ["---"]
+    for key in FIELD_ORDER:
+        if key not in fields or fields[key] is None:
+            continue
+        value = fields[key]
+        if key == "at":
+            lines.append(f'at: "{value}"')          # never a sexagesimal int
+        elif key == "days" and not value:
+            continue
+        else:
+            lines.append(f"{key}: {_yv(value)}")
+    lines += ["---", "", body.strip(), ""]
+    return "\n".join(lines)
+
+
+def slug(name: str) -> str:
+    """The filename stem, and her handle for it. Kept strict so a schedule name
+    can never become a path."""
+    s = re.sub(r"[^a-z0-9]+", "-", str(name or "").lower()).strip("-")
+    return s[:60]
+
+
+def write(name: str, fields: dict, body: str, *, must_exist: bool) -> Schedule:
+    """Render, parse the render, and only then commit. Raises on anything that
+    would not load, or on a name that is not a plain slug."""
+    stem = slug(name)
+    if not stem:
+        raise ValueError(f"{name!r} is not a usable schedule name")
+    path = cfg.SCHEDULES_DIR / f"{stem}.md"
+    if must_exist and not path.exists():
+        known = ", ".join(s.name for s in load_all()) or "(none)"
+        raise ValueError(f"no schedule named {stem!r}; known: {known}")
+    text = render_file(fields, body)
+    sched = parse_text(stem, text, path)            # validate before writing
+    cfg.SCHEDULES_DIR.mkdir(parents=True, exist_ok=True)
+    path.write_text(text)
+    return sched
+
+
+def merge(existing: Schedule, raw_text: str, fields: dict,
+          body: str | None) -> tuple[dict, str]:
+    """An update changes only what she named. Everything unmentioned — the
+    body especially — is carried through unchanged, so `pause the digest` can
+    never quietly discard the contract underneath it."""
+    current = {
+        "every": (f"{existing.n}_days" if existing.every == "n_days"
+                  else existing.every),
+        "at": f"{existing.at:%H:%M}",
+        "days": list(existing.days),
+        "enabled": existing.enabled,
+        "budget_usd": existing.budget_usd,
+        "produces": existing.produces or None,
+        "min_bytes": existing.min_bytes or None,
+        "summary": existing.summary or None,
+    }
+    current.update({k: v for k, v in fields.items() if v is not None})
+    kept = raw_text.split("\n---", 1)[1].split("\n", 1)[1] if "\n---" in raw_text else ""
+    return current, (body if body is not None else kept)
 
 
 # ─── path expansion ─────────────────────────────────────────────────────────
@@ -241,7 +330,7 @@ def system_text(sched: Schedule, when: date) -> str:
     `produces` are here so the instruction can carry real paths — the file's
     own `{date}` / `{MEMORY}` are not expanded on disk.
     """
-    lines = [f"SYSTEM — schedule fired",
+    lines = ["schedule fired",
              f"  name: {sched.name}",
              f"  file: {sched.path}",
              f"  summary: {sched.summary or '(none given)'}",
@@ -394,7 +483,7 @@ def _overdue_text(d: dict) -> str:
     what = ("it does not exist" if d["missing"]
             else f"it is {d['bytes']} bytes, under the {d['min_bytes']} it promised")
     return "\n".join([
-        "SYSTEM — a schedule fired but produced nothing usable",
+        "a schedule fired but produced nothing usable",
         f"  name: {d['schedule']}",
         f"  file: {d['file']}",
         f"  fired: {d['fired']}",

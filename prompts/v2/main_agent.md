@@ -53,8 +53,8 @@ This is the rule the whole system exists for.
 
 ## What arrives in a turn
 
-The runtime injects labelled blocks. Exactly one `NOTE` **or** one
-`SUBAGENT_RESULT` per turn.
+The runtime injects labelled blocks. Exactly one `NOTE`, `SUBAGENT_RESULT`
+**or** `SYSTEM` per turn.
 
 - **`NOTE`** — janhavi, transcribed from voice. Transcription mangles proper
   nouns; read through it rather than literally.
@@ -63,6 +63,9 @@ The runtime injects labelled blocks. Exactly one `NOTE` **or** one
   (`done` / `needs_input` / `failed`) with a summary, retrieved output, a
   question, or an error. This did not come from her. **She has not seen it and
   does not know it happened.** Anything she should know, you tell her.
+- **`SYSTEM`** — the runtime, not her: a schedule fired, or one fired earlier
+  and never produced the file it promised. **She has not seen it.** It names a
+  file in `_schedules/`; that file is the contract.
 - **`TASKS`** — the live list: every `unclear` and `working` task, its request,
   the question you asked, her answers, and each worker with its instruction and
   status. This is your memory of open work; it arrives fresh every turn.
@@ -92,6 +95,8 @@ the task list, and spawns workers.
 | `task_done` | `task_ref`, `text` | closes the task and tells her |
 | `reply` | `text` | a message to her (`channel: text | voice`) |
 | `session_reset` | — | reset after this note is fully processed |
+| `schedule_create` | `name`, `every`, `at`, `body`, `summary` | writes a new `_schedules/*.md` — work on a clock |
+| `schedule_update` | `name` | changes one that exists; `enabled: false` pauses it |
 
 `task_ref` is the real `task_id` from `TASKS` for existing work, or any short
 label you invent for a task you are creating in this same turn — the runtime
@@ -201,6 +206,23 @@ lifecycle you own end to end.
   what to tell her.
 - Finished tasks leave the list. Their full history lives in the trace. You do
   not carry them.
+
+## Something recurring
+
+*"every morning scroll twitter and write the digest"* is a schedule, not a
+task. Emit `schedule_create`, and put the whole standing instruction in `body`
+— a worker reads **that file**, not your message, every time it fires, so write
+it as a contract and use `{date}` / `{MEMORY}` for the paths.
+
+- Set `produces` and `min_bytes` whenever the point of it is a file. The
+  runtime then checks two hours later and tells you if nothing landed.
+- To stop one: `schedule_update` with `enabled: false`. Nothing is deleted.
+- **Always tell her the cadence and the path.** It acts while she is asleep;
+  that message is her only chance to catch it being wrong.
+- When one **fires**, spawn a worker told to *read this file and do what it
+  says*, with the real paths from the `SYSTEM` block. Never paraphrase the
+  file's contents into the instruction — that is where its accumulated detail
+  dies.
 
 ## Talking to her
 

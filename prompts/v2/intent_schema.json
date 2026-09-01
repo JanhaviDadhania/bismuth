@@ -27,7 +27,9 @@
               "spawn",
               "task_done",
               "reply",
-              "session_reset"
+              "session_reset",
+              "schedule_create",
+              "schedule_update"
             ],
             "description": "Which intent this is. Each type has its own required fields, listed in the main agent prompt."
           },
@@ -68,7 +70,55 @@
           },
           "budget_usd": {
             "type": "number",
-            "description": "spawn/route: optional per-worker spend cap. Omit for the default."
+            "description": "spawn/route: optional per-worker spend cap. Omit for the default. schedule_create/schedule_update: the cap for the worker this schedule spawns each time it fires."
+          },
+          "name": {
+            "type": "string",
+            "description": "schedule_create/schedule_update: the schedule's handle, e.g. \"twitter-daily\". Becomes the filename in _schedules/. Lowercase words joined by hyphens."
+          },
+          "every": {
+            "type": "string",
+            "description": "schedule_create/schedule_update: \"daily\", \"weekly\", or an interval like \"3_days\". There is no cron syntax and none is wanted."
+          },
+          "at": {
+            "type": "string",
+            "description": "schedule_create/schedule_update: wall-clock time, \"HH:MM\", 24-hour, local. It fires at the next free slot after this time \u2014 never earlier, and later if she is mid-conversation or the laptop was shut."
+          },
+          "days": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "mon",
+                "tue",
+                "wed",
+                "thu",
+                "fri",
+                "sat",
+                "sun"
+              ]
+            },
+            "description": "schedule_create/schedule_update: which weekdays, for every: weekly. Ignored otherwise."
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "schedule_create/schedule_update: false pauses it. This is how a schedule is stopped \u2014 nothing is deleted, so she can un-pause it later."
+          },
+          "body": {
+            "type": "string",
+            "description": "schedule_create: the standing instruction, written to the schedule file. A worker reads THIS FILE every time it fires, so write it as a contract for a stranger with four tools, not as a note to yourself. It may use {date} and {MEMORY}; the SYSTEM block gives you both when it fires. On schedule_update, omit it to keep the existing body unchanged."
+          },
+          "produces": {
+            "type": "string",
+            "description": "schedule_create/schedule_update: the artifact this schedule must leave behind, relative to the memory root, e.g. \"projects/x/daily/{date}.txt\". The runtime checks it exists two hours after firing and raises a SYSTEM turn if it does not. Set it whenever the schedule's whole point is a file."
+          },
+          "min_bytes": {
+            "type": "integer",
+            "description": "schedule_create/schedule_update: smallest believable size for `produces`. A file that exists but is 12 bytes is a failure too."
+          },
+          "summary": {
+            "type": "string",
+            "description": "schedule_create/schedule_update: one line, what this schedule is for. It is all you get in the SYSTEM block when it fires, so make it enough to decide on."
           },
           "task_ref": {
             "type": "string",

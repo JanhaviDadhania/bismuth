@@ -22,12 +22,13 @@ from datetime import datetime
 from typing import Callable
 
 from . import config as cfg
-from . import destinations
+from . import destinations, schedules
 from .tasks import Projection
 from .trace import Trace
 
 VALID_TYPES = {"route", "task_create", "task_ask", "task_clarify", "spawn",
-               "task_done", "reply", "session_reset"}
+               "task_done", "reply", "session_reset",
+               "schedule_create", "schedule_update"}
 
 
 @dataclass
@@ -52,6 +53,7 @@ class Execution:
     parked: list[str] = field(default_factory=list)
     problems: list[str] = field(default_factory=list)
     task_ids: dict[str, str] = field(default_factory=dict)
+    schedules_written: list[str] = field(default_factory=list)
 
 
 def _slug(text: str, limit: int = 40) -> str:
@@ -102,6 +104,18 @@ class Executor:
                 getattr(self, f"_do_{itype}")(raw, ex, trace_id, note_text)
             except Exception as exc:                      # never lose the turn
                 ex.problems.append(f"{itype} failed: {exc}")
+
+        # A schedule she was never told about is a thing that acts repeatedly
+        # while she is asleep, and this message is her only window into what was
+        # written. The prompt asks for the `reply`; this is what happens when the
+        # agent forgets — the same relationship `destinations.resolve()` has to
+        # the DESTINATIONS block.
+        if ex.schedules_written and not ex.replied:
+            self.send("\n".join(ex.schedules_written))
+            ex.replied = True
+            self.trace.append("reply_sent", trace_id=trace_id, channel="text",
+                              kind="schedule_confirmation",
+                              text="\n".join(ex.schedules_written))
         return ex
 
     # ─── task id plumbing ───────────────────────────────────────────────────
@@ -267,6 +281,88 @@ class Executor:
 
     def _do_session_reset(self, intent: dict, ex: Execution, trace_id, note_text):
         ex.reset_requested = True
+
+    # ─── schedules — created by talking, never by editing v2/ ───────────────
+
+    def _do_schedule_create(self, intent: dict, ex: Execution, trace_id, note_text):
+        """Write a new `_schedules/*.md`. The runtime does this itself, like
+        parking in `others/`, and for the same reason: it is short structured
+        data that must not fail, and a worker that half-wrote it would leave a
+        file `tick()` then chokes on every minute."""
+        fields = self._schedule_fields(intent)
+        fields.setdefault("enabled", None)
+        if fields["enabled"] is None:
+            fields["enabled"] = True     # always written, so she can flip it by hand
+        body = intent.get("body") or ""
+        if not body.strip():
+            ex.problems.append("schedule_create with no body — the file would "
+                               "fire every day and tell the worker nothing")
+            return
+        sched = schedules.write(intent.get("name") or "", fields, body,
+                                must_exist=False)
+        self.trace.append("schedule_created", trace_id=trace_id,
+                          schedule=sched.name, file=str(sched.path),
+                          cadence=sched.cadence(), enabled=sched.enabled,
+                          produces=sched.produces or None,
+                          min_bytes=sched.min_bytes or None,
+                          summary=sched.summary, body=body)
+        ex.schedules_written.append(self._schedule_confirmation(sched, "set up"))
+
+    def _do_schedule_update(self, intent: dict, ex: Execution, trace_id, note_text):
+        """Change one that exists — including `enabled: false`, which is how a
+        schedule is stopped. Nothing is deleted, so she can turn it back on;
+        and anything she did not name is carried through, so *pause the digest*
+        cannot quietly discard the contract in the body."""
+        name = schedules.slug(intent.get("name") or "")
+        existing = schedules.get(name, self.trace)
+        if existing is None:
+            known = ", ".join(s.name for s in schedules.load_all(self.trace))
+            ex.problems.append(f"schedule_update for unknown schedule "
+                               f"{name!r}; known: {known or '(none)'}")
+            return
+        before = existing.cadence(), existing.enabled
+        merged, body = schedules.merge(existing, existing.path.read_text(),
+                                       self._schedule_fields(intent),
+                                       intent.get("body"))
+        sched = schedules.write(name, merged, body, must_exist=True)
+        self.trace.append("schedule_updated", trace_id=trace_id,
+                          schedule=sched.name, file=str(sched.path),
+                          cadence_was=before[0], cadence=sched.cadence(),
+                          enabled_was=before[1], enabled=sched.enabled,
+                          produces=sched.produces or None,
+                          min_bytes=sched.min_bytes or None,
+                          summary=sched.summary)
+        verb = ("paused" if not sched.enabled
+                else "un-paused" if not before[1] else "changed")
+        ex.schedules_written.append(self._schedule_confirmation(sched, verb))
+
+    @staticmethod
+    def _schedule_fields(intent: dict) -> dict:
+        """Only what the agent actually named. `None` means unchanged on an
+        update, and default on a create."""
+        days = intent.get("days")
+        return {
+            "every": intent.get("every"),
+            "at": intent.get("at"),
+            "days": list(days) if days else None,
+            "enabled": intent.get("enabled"),
+            "budget_usd": intent.get("budget_usd"),
+            "produces": intent.get("produces"),
+            "min_bytes": intent.get("min_bytes"),
+            "summary": intent.get("summary"),
+        }
+
+    @staticmethod
+    def _schedule_confirmation(sched, verb: str) -> str:
+        """Names the cadence and the file, always. She should be able to go
+        read and hand-edit the thing that will act without her."""
+        line = f"{verb.capitalize()} {sched.name} — {sched.cadence()}."
+        if not sched.enabled:
+            line += " It will not fire until you turn it back on."
+        line += f"\n{sched.path}"
+        if sched.produces:
+            line += f"\nWrites: {sched.produces}"
+        return line
 
     # ─── helper ─────────────────────────────────────────────────────────────
 
