@@ -1,0 +1,164 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Bismuth main agent turn output",
+  "description": "The complete output of one main agent turn. The runtime performs the intents in listed order, writing a trace event for each. An empty list means silence.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "intents"
+  ],
+  "properties": {
+    "intents": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "route",
+              "task_create",
+              "task_ask",
+              "task_clarify",
+              "spawn",
+              "task_done",
+              "reply",
+              "session_reset",
+              "schedule_create",
+              "schedule_update"
+            ],
+            "description": "Which intent this is. Each type has its own required fields, listed in the main agent prompt."
+          },
+          "destination": {
+            "type": "string",
+            "description": "route: memory path the note lands in, relative to the memory root. Must appear in the turn's DESTINATIONS block, or be under others/."
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "declared",
+              "inferred",
+              "unroutable"
+            ],
+            "description": "route: declared = she named the destination; inferred = the agent chose it; unroutable = parked in others/."
+          },
+          "reason": {
+            "type": "string",
+            "description": "route: one line, why this destination. The permanent record of why the note landed where it did."
+          },
+          "instruction": {
+            "type": "string",
+            "description": "route/spawn: the complete self-contained instruction for a worker. Absolute paths, exact text, exact operation. Written verbatim to the trace."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "write",
+              "search",
+              "other"
+            ],
+            "default": "write",
+            "description": "spawn/route: what the worker is for. search = read-only retrieval; the worker must change nothing and returns its findings in `output`."
+          },
+          "claude_md": {
+            "type": "string",
+            "description": "spawn/route: absolute path to a CLAUDE.md the worker should read first, if the target folder has one."
+          },
+          "budget_usd": {
+            "type": "number",
+            "description": "spawn/route: optional per-worker spend cap. Omit for the default. schedule_create/schedule_update: the cap for the worker this schedule spawns each time it fires."
+          },
+          "name": {
+            "type": "string",
+            "description": "schedule_create/schedule_update: the schedule's handle, e.g. \"twitter-daily\". Becomes the filename in _schedules/. Lowercase words joined by hyphens."
+          },
+          "every": {
+            "type": "string",
+            "description": "schedule_create/schedule_update: \"daily\", \"weekly\", or an interval like \"3_days\". There is no cron syntax and none is wanted."
+          },
+          "at": {
+            "type": "string",
+            "description": "schedule_create/schedule_update: wall-clock time, \"HH:MM\", 24-hour, local. It fires at the next free slot after this time \u2014 never earlier, and later if she is mid-conversation or the laptop was shut."
+          },
+          "days": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "mon",
+                "tue",
+                "wed",
+                "thu",
+                "fri",
+                "sat",
+                "sun"
+              ]
+            },
+            "description": "schedule_create/schedule_update: which weekdays, for every: weekly. Ignored otherwise."
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "schedule_create/schedule_update: false pauses it. This is how a schedule is stopped \u2014 nothing is deleted, so she can un-pause it later."
+          },
+          "body": {
+            "type": "string",
+            "description": "schedule_create: the standing instruction, written to the schedule file. A worker reads THIS FILE every time it fires, so write it as a contract for a stranger with four tools, not as a note to yourself. It may use {date} and {MEMORY}; the SYSTEM block gives you both when it fires. On schedule_update, omit it to keep the existing body unchanged."
+          },
+          "produces": {
+            "type": "string",
+            "description": "schedule_create/schedule_update: the artifact this schedule must leave behind, relative to the memory root, e.g. \"projects/x/daily/{date}.txt\". The runtime checks it exists two hours after firing and raises a SYSTEM turn if it does not. Set it whenever the schedule's whole point is a file."
+          },
+          "min_bytes": {
+            "type": "integer",
+            "description": "schedule_create/schedule_update: smallest believable size for `produces`. A file that exists but is 12 bytes is a failure too."
+          },
+          "summary": {
+            "type": "string",
+            "description": "schedule_create/schedule_update: one line, what this schedule is for. It is all you get in the SYSTEM block when it fires, so make it enough to decide on."
+          },
+          "task_ref": {
+            "type": "string",
+            "description": "An existing task_id from the TASKS block, or any short label invented for a task created in this same turn; the runtime maps labels to ids."
+          },
+          "request": {
+            "type": "string",
+            "description": "task_create: one line describing what she asked for."
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "unclear",
+              "working"
+            ],
+            "description": "task_create: unclear if the work cannot be fully specified yet, working if it can. `done` is an event, never a state."
+          },
+          "question": {
+            "type": "string",
+            "description": "task_ask: the question to send her. One question, her language, smallest thing that unblocks the work."
+          },
+          "answer": {
+            "type": "string",
+            "description": "task_clarify: her answer folded into the task, in a form the next instruction can be written from."
+          },
+          "text": {
+            "type": "string",
+            "description": "reply/task_done: the message to send her, in Bismuth's own voice. Never a worker's words verbatim."
+          },
+          "channel": {
+            "type": "string",
+            "enum": [
+              "text",
+              "voice"
+            ],
+            "default": "text",
+            "description": "reply: text, or a TTS voice note."
+          }
+        }
+      }
+    }
+  }
+}

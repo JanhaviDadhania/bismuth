@@ -1,0 +1,38 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Sub-agent terminal result",
+  "description": "The sub-agent's final message. Exactly one of three terminal statuses; the status is the entire protocol. Read by the runtime and relayed by the main agent in its own words.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "status",
+    "summary"
+  ],
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": [
+        "done",
+        "needs_input",
+        "failed"
+      ],
+      "description": "done = finished and verified by read-back. needs_input = cannot proceed without a human answer; the worker exits carrying the question. failed = it broke."
+    },
+    "summary": {
+      "type": "string",
+      "description": "One or two lines: what was actually done, including how it was verified. Anything a human should know goes here."
+    },
+    "output": {
+      "type": "string",
+      "description": "Search/read-only tasks: the material actually retrieved, verbatim, with file paths. Not a paraphrase. Empty or absent if nothing was found."
+    },
+    "question": {
+      "type": "string",
+      "description": "needs_input only: one sentence, the smallest question that would unblock the work."
+    },
+    "error": {
+      "type": "string",
+      "description": "failed only: one line, what broke."
+    }
+  }
+}

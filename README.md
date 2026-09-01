@@ -1,105 +1,70 @@
-<p align="center"><em>your mind is for having ideas, not holding them</em></p>
-
-
-<p align="center"><em>We have been writing code word by word, doing one thing at a time like it's 2015 and still have patience. No we don't. We lost it at the beginning of 2026, right around when claude started finishing our sentences better than us</em></p>
+# bismuth
 
 <p align="center"><img width="300" height="300" alt="Bismuth" src="./pngegg.png" /></p>
 
-<p align="center"><em>plus, Everybody is making their personal agent now. I didn't want to be the one left behind. But I also didn't want it to be another claude+chat. So I stayed up a few nights and made Bismuth. You just fork and setup this repo to have your own bismuth.</em></p>
+Janhavi speaks into her phone, and a thing she trusts puts it in the right
+place, tells her it did, and can find it again when she asks.
 
-<p align="center"><em>No it doesn't do your dishes. It's a software agent, calm down. But it does remember everything you've ever told it, surface your reminders every morning, pick up any file you drop in a folder, run research tasks in the background, write code, browse the web, and honestly after 5 days it is going to know your schedule better than you do.</em></p>
+**Two jobs, and only two.** Nothing she says is lost. She can get it back.
 
-<p align="center"><em>As you start talking to bismuth, it stores everything it know about you in a diary. In memory/ folder. My Bismuth's memory lives in a separate private repo, and yours should too. You don't want your diary on public repo.</em></p>
+This is v2. v1 was an assistant, a brainstorming partner and a worker; v2 is
+capture and retrieval, and the brainstorming partner has moved out. That is a
+deliberate narrowing — every component removed is one that cannot fail.
 
-<p align="center"><em>It works. Here's the receipts.</em></p>
-<img width="2109" height="1179" alt="bismuthcareditcard" src="https://github.com/user-attachments/assets/75d7b999-bbcf-4a36-b943-60f0c9c73084" />
+## Run it
 
-<p></p>
-<p align="center"><em>Here's what's inside. Don't overthink it. Agents do things, tools are how they do things, prompts are what you tell them, memory is what they remember.</em></p>
-
-## Architecture (v2)
-
-Three agents driven by one long-running harness:
-
-- **Assistant** — always-on. Reads every Telegram message, routes to memory, captures mood, replies in your voice. Default agent.
-- **Coffeechat** — thinking partner per project. Invoked when you signal you want to think/brainstorm. Hands back to assistant when done.
-- **Executor** — does the actual work. Spawned per task, runs in the background (up to 3 concurrent). Writes outputs into memory, asks via mailbox files when stuck.
-
-The **harness** owns Telegram polling (with an on-disk spool so a crash can't lose messages), agent switching, executor lifecycle (with queueing past the cap), watcher supervision, and state persistence. Agents are `claude -p` subprocesses holding resumable sessions; everything they remember lives on disk. `/status` and `/halt` are answered by the harness directly — no LLM call, so they work even when the agent path is broken.
-
-```
-home/
-├── harness.py            the always-on orchestrator
-├── prompts/
-│   ├── assistant.md
-│   ├── coffeechat.md
-│   ├── executor.md
-│   ├── evaluation.md     loaded manually in CLI for weekly eval
-│   └── skills/           *.md skill files concatenated onto agent prompts
-├── tools/
-│   ├── telegram_cli.py   send-only Telegram CLI used by agents
-│   ├── track_append.py   flock'd append for shared files (tracking.md)
-│   ├── transcribe.py     voice → text (faster-whisper); also a CLI
-│   ├── tts.py            macOS `say` wrapper
-│   ├── r2d2_chirp.py     chirp synth for the robot body
-│   └── watchers/         auto-supervised sensors (daily_reminder, fs_dropbox, …)
-├── run.sh                starts harness + memory git-sync loop
-└── config.yaml           env vars + memory_path (the only two keys read)
+```sh
+./run.sh                  # preflight, then serve
+python3 -m v2 status      # queue, tasks, others/, session, trace health
+open ~/bismuth-memory/board.html
 ```
 
-Memory lives in a separate private repo at `~/bismuth-memory/`:
+Needs a Telegram bot token in `config.yaml` under `v2.telegram_bot_token`, and
+`~/bismuth-memory` as a git repo. `python3 -m v2 check` says what is missing.
+
+## How it works
 
 ```
-bismuth-memory/
-├── nexttodo.md           tagged @janhavi or @agent
-├── someday-maybe.md
-├── to_read.md
-├── mood.md
-├── second_order_thoughts.md
-├── tracking.md           global, with <project:NAME> tags
-├── checklists.md
-├── reference/
-└── projects/<name>/
-    ├── vision.md
-    ├── nexttodo.md
-    ├── reference/
-    └── coffeechat/       (optional session state)
+  phone (Telegram voice note)
+        │  long-poll, spool to disk, THEN advance the offset
+        ▼
+  ┌───────────────────────────────────────────────┐
+  │  MAIN AGENT — one session, one turn, NO TOOLS │
+  │  it decides; it never does                    │
+  └───┬──────────────┬──────────────┬─────────────┘
+      │ reply        │ task list    │ sub-agents (claude -p, stripped)
+      ▼              ▼              ▼ all writes
+   Telegram       board        ~/bismuth-memory
+        └──────── TRACE (append-only, never rotated) ────────┘
 ```
 
-Runtime scratch (state, executor mailboxes, telegram spool, logs) lives under `~/bismuth-memory/.harness/` — gitignored in the memory repo; it's scratch, not memory.
+The main agent runs with `--tools ""`, so it *cannot* do the work itself — even
+a one-line append is delegated to a sub-agent with a self-contained
+instruction. Sub-agents have four tools, no identity, and three ways to end:
+`done`, `needs_input`, `failed`. Only the main agent ever talks to her.
 
-Design docs: `docs/v2/V2_PLAN.md`, `docs/v2/HARNESS_DESIGN.md`, `docs/v2/MEMORY_RESTRUCTURE_STEPS.md`. Smoke test corpus: `TESTS.md`.
+The trace is the single source of truth. The task list and the board are
+projections of it, so they cannot drift.
 
-## Setup
+## Where things are
 
-1. Install app dependencies: `brew bundle`
-2. Install Python dependencies: `pip install -r requirements.txt`
-3. Install browser: `npm install -g silicon-browser && silicon-browser install`
-4. Log in to sites once: `silicon-browser --profile silicon open <url>`
-5. Copy `config.yaml.example` → `config.yaml` and fill in `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, and `memory_path` (your private memory repo). `ANTHROPIC_API_KEY` is optional if `claude login` has been run.
-6. In your memory repo, create `projects/<name>/vision.md` for each project (or just tell the assistant to start one).
+| Path | What |
+|---|---|
+| `prompts/v2/` | **the behaviour** — main agent, sub-agent, and both schemas |
+| `v2/` | the runtime (see `v2/README.md` for the module map) |
+| `docs/V2_ARCHITECTURE.md` | what it is, component by component |
+| `docs/V2_REQUIREMENTS.md` | every decision, dated, with the reasoning |
+| `tools/board.py` | the memory tree as one infinite canvas |
+| `tools/transcribe.py` | faster-whisper, as a subprocess |
+| `TESTS.md` | the smoke corpus |
 
-## Running
+After the runtime stripping, `prompts/v2/main_agent.md` and
+`prompts/v2/subagent.md` are the *only* behavioural content in the system. No
+skills, no protocols, no MCP. If you want to change how Bismuth behaves, that
+is where you go.
 
-```bash
-./run.sh                                # starts harness + memory git-sync loop
-```
+## v1
 
-The harness listens on Telegram. Talk to it; it routes, replies, switches to coffeechat when asked, and spawns executors when work needs doing.
-
-Two messages are answered by the harness itself, instantly and without an LLM call:
-
-- `/status` — active agent, session age, executors (running/asking/queued), watcher health.
-- `/halt` — kill all executors, clear the queue and buffer, reset to assistant.
-
-### Weekly evaluation
-
-Run manually, once a week, in Claude CLI:
-
-```bash
-cd ~/bismuth-memory
-claude
-# then in Claude: "read ~/bismuth/prompts/evaluation.md and follow those instructions"
-```
-
-The evaluation agent reads `evaluation_focus.md` (which it edits itself over time as you express what to track), looks at the past week of `tracking.md` / `mood.md` / `reminders.md` / nexttodos, and runs a short conversation. Session summary lands in `~/bismuth-memory/evaluation/<date>.md`.
+Gone from this branch: the harness, protocols, watchers, the mailbox, modes,
+skills, the synthetic inbox. `git log --diff-filter=D --name-only` finds them;
+they are in this branch's history, and most are also on `main`.
