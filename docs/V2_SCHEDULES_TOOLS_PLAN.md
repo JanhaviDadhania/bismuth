@@ -1,7 +1,8 @@
 # Bismuth v2 — Schedules & Tools Plan
 
-Status: **planned, not built.** Owner: Janhavi. Bismuth implements; Janhavi
-confirms each decision.
+Status: **Part A built 2026-09-01. Part B (the tool catalog) not started —
+it waits for robot-io.** Owner: Janhavi. Bismuth implements; Janhavi confirms
+each decision.
 
 Companion to `V2_REQUIREMENTS.md` (which holds the decision log) and
 `V2_ARCHITECTURE.md` (which describes the shipped runtime). Nothing here is
@@ -455,7 +456,9 @@ tree, so none of this needs to rehearse against real memory.
 
 ---
 
-## Decisions this plan assumes (to be logged once confirmed)
+## Decisions this plan assumes — **all ten confirmed 2026-09-01** and logged in
+`V2_REQUIREMENTS.md` under *Decisions — 2026-09-01 (schedules and the tool
+catalog)*, with one amendment: #6's verification is **debounced** (see there).
 
 1. Schedules and tools are **data in reserved memory folders**, never generated
    code. Nothing in `v2/` is edited to add one.

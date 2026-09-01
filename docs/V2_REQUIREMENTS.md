@@ -1045,3 +1045,147 @@ assumed. The code is `v2/`, tests are `tests/test_v2.py`.
   shell. `Bash` still reaches `silicon-browser` if an instruction ever names
   it, so nothing is lost; it simply is not a standing capability, and the ~80
   tokens are not spent on every spawn.
+
+## Decisions — 2026-09-01 (schedules and the tool catalog)
+
+Confirmed by Janhavi before any code was written, from the list at the foot of
+`V2_SCHEDULES_TOOLS_PLAN.md`. Part A is built; Part B waits for robot-io.
+
+- **2026-09-01 — A schedule and a tool are data in reserved memory folders,
+  never generated code.** `~/bismuth-memory/_schedules/*.md` is WHEN,
+  `_tools/*.md` is WHAT WITH. One generic reader is written once; after that the
+  twentieth schedule is identical to the first — a file appears in a folder, and
+  nothing in `v2/` is edited. This is a direct correction of v1, where watchers
+  were `.py` files: adding one meant writing Python, which is why exactly two
+  ever existed. `tools/watchers/twitter_daily.py` was 80 lines to express
+  "08:30 daily, write a dated txt"; the schedule that replaces it is 8 lines of
+  frontmatter and the prose a worker reads.
+
+- **2026-09-01 — Reserved folders are `_`-prefixed and excluded generically.**
+  `destinations.py` now skips any path part starting with `_`, so `_archive` and
+  `_dropbox_received` came out of `SKIP_DIRS` as redundant and every future
+  machine-owned folder is reserved the moment it is created. If `_schedules/`
+  were routable the main agent could file a grocery list into it and `tick()`
+  would try to parse the grocery list as a schedule. **Added beyond the plan:**
+  `destinations.resolve()` rejects `_` paths too. Hiding a folder from the
+  DESTINATIONS block is the model-facing guard; `resolve()` is the runtime's,
+  and the stated reason for reserving the folder is that a note must not be able
+  to land in it.
+
+- **2026-09-01 — `last_fired` lives in `state.json`, written in the same
+  `mutate()` block as the enqueue.** Sequenced separately there is a crash
+  window either way: mark-then-enqueue loses a run silently, enqueue-then-mark
+  duplicates it. Both live in `state.json`, so one locked read-modify-write
+  closes it entirely. This is why it is runtime state and not frontmatter the
+  runtime rewrites every morning. `state.prepare_turn()` was split out of
+  `enqueue_turn()` to make it possible — `mutate()` cannot nest, because a
+  second `flock` on a fresh fd for the same file deadlocks.
+  **Amended when confirmed:** the value is
+  `{last_fired, last_fired_at, overdue_flagged}`, not a bare date. See the
+  verification decision below.
+
+- **2026-09-01 — A firing schedule carries a pointer, not its body.** The
+  SYSTEM block gives the main agent the path, a one-line `summary`, the cadence,
+  the fire date, the memory root, the expanded `produces` and the budget — and
+  not the standing instruction. Inlining the body means the agent paraphrases
+  it into a worker instruction, and that retyping hop is exactly where
+  accumulated contract detail disappears. Confirmed by the real thing:
+  `twitterdaily/CLAUDE.md` is 51 lines carrying the inline hashtag scheme, the
+  honesty rule, the logged-out fallback and the 2026-07-16 hang note. No
+  paraphrase survives that. Observed in the first live firing: the agent read
+  the SYSTEM block, told the worker *read this file and follow it literally*,
+  substituted `{date}` and `{MEMORY}` from the block, and did not restate the
+  body — which is the whole design working.
+
+- **2026-09-01 — Schedules fire through the main agent, not straight to a
+  worker**, so the work lands in the task projection and a dead worker still
+  reaches her. And they **do not preempt**: one queue, one turn at a time.
+  "08:30" means "the next free slot after 08:30".
+
+- **2026-09-01 — Firing is a date-guard, not an interval.** Due when
+  `last_fired != today` and the wall clock has passed `at`. Laptop shut at 08:30
+  and opened at 14:00 fires at 14:00. Late beats never for a digest. Naive local
+  `datetime.now()`, deliberately: "08:30" means wall clock, not a timezone.
+
+- **2026-09-01 — Artifact verification happens on the next tick, not at worker
+  reap — and it is debounced.** A worker returning `done` is not evidence: on
+  2026-07-16 the v1 digest burned 38 turns and ~$1.53 on a hung snapshot and
+  produced nothing, silently. So any schedule with `produces:` whose artifact is
+  missing or under `min_bytes` two hours after firing raises its own SYSTEM
+  turn. Checking here rather than per-worker is what catches the worst failure —
+  the main agent deciding not to spawn anything at all, which nothing else would
+  notice. **The plan as written re-checked every tick**, which would have sent
+  one main-agent turn per minute from 10:30 to midnight — about 810 — for a
+  single missed run. Debounced on `overdue_flagged`, stamped with the fire date,
+  so a missed run is reported once and a new firing re-arms it. Verified live:
+  the artifact was deleted, the check caught it, she was told, a worker restored
+  it, and three further checks said nothing.
+
+- **2026-09-01 — `schedule_create` always ships with a reply naming the cadence
+  and the file, and the runtime guarantees it.** A schedule acts repeatedly
+  while she is asleep, so that message is her only window into what was written.
+  The prompt asks for the `reply`; if the agent omits one, the `Executor` sends
+  the cadence and the path itself. Same relationship `destinations.resolve()`
+  has to the DESTINATIONS block: asked in the prompt, enforced in the runtime.
+
+- **2026-09-01 — Schedules are written by the runtime; tool cards by a worker.**
+  A card needs investigation — run `--help`, read the README, try a command,
+  write down what actually happened — which is long-form work that benefits from
+  exploration. A schedule is a handful of structured fields that must be written
+  reliably. Long-form that benefits from exploration → worker. Short structured
+  data that must not fail → runtime. The writer renders the file, parses the
+  render, and only then commits, so `_schedules/` can never accumulate a file
+  that fails at 08:30 tomorrow. An update carries through everything she did not
+  name, so *"pause the digest"* cannot quietly discard the body.
+
+- **2026-09-01 — Nothing is deleted; `enabled: false` is how a schedule
+  stops.** She can turn it back on, and the contract in the body survives the
+  pause.
+
+- **2026-09-01 — No daemon supervision.** Verified on this machine that a
+  worker can already start a process that outlives it: `v2/subagent.py` reaps
+  with a bare `proc.kill()` — no `killpg`, no `start_new_session` — so
+  `nohup <cmd> >> log 2>&1 &` survives the worker, a runtime restart, and Ctrl+C
+  on `run.sh`. **`setsid` does not exist on macOS**, so most detach recipes are
+  wrong here. What that does not give is restart-on-crash, a record the process
+  exists, survival across reboot, or duplicate protection — and of those only
+  duplicates are a real risk (two daemons on one serial port), which a
+  `pgrep -f … ||` guard in the tool card fixes with zero code. v1 shipped the
+  working robot with the daemon self-starting and bismuth oblivious; adding
+  supervision now would mean bismuth racing robot-io for a port robot-io already
+  manages. If a tool ever appears that genuinely cannot self-start, the
+  supervisor is recoverable and already debugged at
+  `git show 281ebc4^:harness.py`, lines 730–900.
+
+- **2026-09-01 — Installs require explicit confirmation on Telegram.** Writing
+  a card is a file write and a worker does it freely; `pip install git+https://…`
+  mutates the machine. Workers are `effort: low`, single-shot and $2-capped —
+  right for filing, wrong for unreviewed installs. The worker proposes the
+  command in its card and ends `needs_input`; the main agent asks; on
+  confirmation a second worker runs it. All existing machinery, no new code.
+
+- **2026-09-01 — All four `_background` checks are wrapped individually.** Not
+  defensive habit: one uncaught exception killed the thread and took audio
+  archiving, the memory git sync and the board with it, silently, since nothing
+  watches that thread. Already latent before this work; `_schedules/` made it
+  live, because a hand-edited schedule file can throw in `parse()`. Proven with
+  a check that raises on every pass — three passes, the other three checks still
+  running, each failure traced as `background_check_failed`.
+
+- **2026-09-01 — `python3 -m v2 fire <name>` is part of the build, not a
+  convenience.** There is no test suite; `feed` covers notes and nothing covered
+  a SYSTEM turn, so without `fire` the only way to test a schedule was to wait
+  until tomorrow morning. `--no-mark` restores `last_fired` afterwards so a
+  rehearsal cannot eat the real run. `overdue` and `schedules` came with it.
+
+- **2026-09-01 — No cron syntax, no watchers, no `_daemons/`.**
+  `every: daily | weekly | N_days` plus `at:` covers everything she would say
+  out loud, and nobody has to debug `0 30 8 * * *`. Event-driven sensing stays
+  out; polling schedules cover the real cases, and a genuine watcher would be an
+  ordinary reviewed code task.
+
+- **2026-09-01 — The real gap is not the scheduler: nothing fires while the
+  process is down.** The date-guard catches up on the next start, so a morning
+  digest lands late rather than never — but only if bismuth is running at some
+  point that day. A launchd job for bismuth itself is still not built, and it is
+  the thing standing between "most mornings" and "every morning".
