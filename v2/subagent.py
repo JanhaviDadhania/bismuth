@@ -108,7 +108,7 @@ def run(instruction: str, subagent_id: str, trace_id: str | None = None,
     stderr_path = cfg.STDERR_DIR / f"{subagent_id}.stderr"
     stderr_path.parent.mkdir(parents=True, exist_ok=True)
 
-    final_text, result_obj = "", None
+    final_text, result_obj, last_assistant = "", None, ""
     try:
         with open(stderr_path, "w") as errf:
             proc = subprocess.Popen(
@@ -128,6 +128,13 @@ def run(instruction: str, subagent_id: str, trace_id: str | None = None,
                     continue
                 tr.append("subagent_event", trace_id=trace_id,
                           subagent_id=subagent_id, line=event)
+                if event.get("type") == "assistant":
+                    text = " ".join(
+                        c.get("text", "")
+                        for c in (event.get("message") or {}).get("content", [])
+                        if c.get("type") == "text")
+                    if text.strip():
+                        last_assistant = text
                 if event.get("type") == "result":
                     result_obj = event
                     final_text = event.get("result") or ""
@@ -155,18 +162,39 @@ def run(instruction: str, subagent_id: str, trace_id: str | None = None,
         return SubagentResult(subagent_id, "failed",
                               error="no result event — the worker died before finishing",
                               **common)
-    if (result_obj or {}).get("is_error"):
-        return SubagentResult(
-            subagent_id, "failed",
-            error=(result_obj.get("api_error_status") or final_text
-                   or "claude -p reported an error")[:2000], **common)
+    if result_obj.get("is_error"):
+        # Say what actually happened. `api_error_status` is null for most
+        # failures; the useful fields are `subtype` and `terminal_reason`, and
+        # stderr is usually empty because claude -p reports errors in-stream.
+        detail = " · ".join(str(x) for x in (
+            result_obj.get("subtype"), result_obj.get("terminal_reason"),
+            result_obj.get("api_error_status"),
+            f"spent ${common['cost_usd']:.2f}" if common["cost_usd"] else None,
+            (stderr_path.read_text()[:400].strip() or None) if stderr_path.exists() else None,
+        ) if x)
+        # The worker may have finished and then tripped the cap on its way out
+        # (measured: a completed write, reported as a failure, then redone by
+        # the main agent at full cost). If it emitted a terminal status, that
+        # status is the truth about the work; the error is context, not a verdict.
+        salvaged = parse_final(final_text) or parse_final(last_assistant)
+        if salvaged and salvaged.get("status") in ("done", "needs_input", "failed"):
+            return SubagentResult(
+                subagent_id, salvaged["status"],
+                summary=str(salvaged.get("summary") or ""),
+                output=str(salvaged.get("output") or ""),
+                question=str(salvaged.get("question") or ""),
+                error=f"[worker also ended abnormally: {detail}]",
+                **common)
+        return SubagentResult(subagent_id, "failed",
+                              error=(detail or "claude -p reported an error")[:2000],
+                              summary=last_assistant[:500], **common)
 
-    parsed = parse_final(final_text)
+    parsed = parse_final(final_text) or parse_final(last_assistant)
     if parsed is None:
         return SubagentResult(
             subagent_id, "failed",
             error="worker did not return the required JSON object",
-            summary=final_text[:1000], **common)
+            summary=(final_text or last_assistant)[:1000], **common)
 
     status = parsed.get("status")
     if status not in ("done", "needs_input", "failed"):

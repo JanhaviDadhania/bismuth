@@ -955,3 +955,67 @@ assumed. The code is `v2/`, tests are `tests/test_v2.py`.
   until a private GitHub repo exists and `origin` is set. This is the intended
   degradation, not a gap: archiving is off the critical path, so a note is
   never blocked, delayed or failed by the archive.
+
+## Decisions — 2026-09-01 (pruning the branch)
+
+- **2026-09-01 — `board` holds only what v2 uses. Everything v1 is removed.**
+  Janhavi: *"clean up the code on board branch and remove things that are not
+  being used on v2."* Deleted: `harness.py`, all 24 files under `protocols/`,
+  the four v1 prompts, `prompts/skills/`, `tools/watchers/`, and the v1-only
+  tools (`telegram_cli.py`, `track_append.py`, `usage_report.py`,
+  `r2d2_chirp.py`, `tts.py`). Also the four superseded harness design docs under
+  `docs/v2/`. 90 tracked files → 39. Every deletion traces to §8 — v2 drops
+  coffeechat, watchers, the synthetic inbox, the mailbox, `/status` and `/halt`
+  — or to §10's "no skills, no protocols".
+
+- **2026-09-01 — `v1.1` is the branch that still has both systems.** Pushed at
+  `b0865e8`, the last commit holding the v1 harness *and* the complete v2
+  runtime. Recorded because a merge cannot recover it: **`main` is an ancestor
+  of `board`**, so `git merge main` is a no-op, and the 24 protocol files never
+  existed on `main` at all — they were only ever on this branch. Without `v1.1`
+  they would live only in history.
+
+- **2026-09-01 — `mood.md` and `tracking.md` were memory living in the code
+  repo, and they were not duplicates.** Deleting them outright would have lost
+  1 line of `mood.md` and 7 of `tracking.md` — real v1 executor history from
+  July and August that had never reached `bismuth-memory`. Migrated into the
+  memory copies under a dated "recovered from the code repo" heading, verified
+  zero lines remained unique, and only then deleted. This is the two-repo rule
+  being enforced rather than assumed: `bismuth/` is code and templates, and
+  everything that persists belongs in `bismuth-memory/`.
+
+- **2026-09-01 — Sub-agent failures now say what happened, and finished work is
+  no longer thrown away.** A worker reported `failed` with the useless string
+  `"claude -p reported an error"`. The detail was in the trace all along — the
+  stream's `result` line carried `subtype: "error_max_budget_usd"`,
+  `terminal_reason: "budget_exhausted"`, `$0.500807` — but the failure path only
+  read `api_error_status`, which is null for most errors, and stderr, which
+  `claude -p` leaves empty because it reports errors in-stream. **The worse
+  half:** that worker had already *finished*, and its final assistant message
+  held a valid `{"status":"done", …}`. Because `is_error` was checked before
+  parsing, the completed write was discarded and the main agent respawned the
+  whole job at full cost. Now: the error is composed from `subtype`,
+  `terminal_reason`, `api_error_status`, spend and stderr; and if the worker
+  emitted a terminal status before dying, that status is believed and the
+  abnormal end is attached as context rather than overriding it. The default
+  `--max-budget-usd` goes 0.50 → 2.00 — it is a blast-radius bound, not a cost
+  target, and 0.50 was tight enough to fail real work.
+
+- **2026-09-01 — The "write it to a file and send her the link" instruction is
+  removed from the main agent prompt.** Janhavi: *"i don't need the
+  functionality of upload to file and send to janhavi."* It was also a promise
+  the runtime never kept — there is no `sendDocument` wiring and no `file` field
+  on the `reply` intent — and she saw the consequence live: it sent two file
+  paths, then had to say *"right, they're files on your machine, not links"* and
+  inline the content. The rule that replaces it: send the shape and the paths,
+  let her ask for the part she wants, and only write a file if she asked for one.
+
+- **2026-09-01 — The board renders v2 sections only for the tree v2 is
+  configured for.** `tools/board.py --memory X` was pulling tasks and `others/`
+  from `config.yaml`'s memory path regardless of `X`, so pointing the board at
+  another tree showed the wrong tree's live work. Caught by the v1 board tests,
+  which is the argument for having kept them.
+
+- **2026-09-01 — `bismuth-audio` has a remote and is pushing.**
+  `github.com/JanhaviDadhania/bismuth-audio`, private, 3 voice notes archived
+  and pushed on the first run.
