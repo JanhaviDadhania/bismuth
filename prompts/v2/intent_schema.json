@@ -1,0 +1,114 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Bismuth main agent turn output",
+  "description": "The complete output of one main agent turn. The runtime performs the intents in listed order, writing a trace event for each. An empty list means silence.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "intents"
+  ],
+  "properties": {
+    "intents": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "route",
+              "task_create",
+              "task_ask",
+              "task_clarify",
+              "spawn",
+              "task_done",
+              "reply",
+              "session_reset"
+            ],
+            "description": "Which intent this is. Each type has its own required fields, listed in the main agent prompt."
+          },
+          "destination": {
+            "type": "string",
+            "description": "route: memory path the note lands in, relative to the memory root. Must appear in the turn's DESTINATIONS block, or be under others/."
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "declared",
+              "inferred",
+              "unroutable"
+            ],
+            "description": "route: declared = she named the destination; inferred = the agent chose it; unroutable = parked in others/."
+          },
+          "reason": {
+            "type": "string",
+            "description": "route: one line, why this destination. The permanent record of why the note landed where it did."
+          },
+          "instruction": {
+            "type": "string",
+            "description": "route/spawn: the complete self-contained instruction for a worker. Absolute paths, exact text, exact operation. Written verbatim to the trace."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "write",
+              "search",
+              "other"
+            ],
+            "default": "write",
+            "description": "spawn/route: what the worker is for. search = read-only retrieval; the worker must change nothing and returns its findings in `output`."
+          },
+          "claude_md": {
+            "type": "string",
+            "description": "spawn/route: absolute path to a CLAUDE.md the worker should read first, if the target folder has one."
+          },
+          "budget_usd": {
+            "type": "number",
+            "description": "spawn/route: optional per-worker spend cap. Omit for the default."
+          },
+          "task_ref": {
+            "type": "string",
+            "description": "An existing task_id from the TASKS block, or any short label invented for a task created in this same turn; the runtime maps labels to ids."
+          },
+          "request": {
+            "type": "string",
+            "description": "task_create: one line describing what she asked for."
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "unclear",
+              "working"
+            ],
+            "description": "task_create: unclear if the work cannot be fully specified yet, working if it can. `done` is an event, never a state."
+          },
+          "question": {
+            "type": "string",
+            "description": "task_ask: the question to send her. One question, her language, smallest thing that unblocks the work."
+          },
+          "answer": {
+            "type": "string",
+            "description": "task_clarify: her answer folded into the task, in a form the next instruction can be written from."
+          },
+          "text": {
+            "type": "string",
+            "description": "reply/task_done: the message to send her, in Bismuth's own voice. Never a worker's words verbatim."
+          },
+          "channel": {
+            "type": "string",
+            "enum": [
+              "text",
+              "voice"
+            ],
+            "default": "text",
+            "description": "reply: text, or a TTS voice note."
+          }
+        }
+      }
+    }
+  }
+}

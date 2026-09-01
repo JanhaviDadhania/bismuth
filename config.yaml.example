@@ -8,3 +8,19 @@ env:
   ANTHROPIC_API_KEY: ""       # optional — leave empty if `claude login` has been run
 
 memory_path: ~/bismuth-memory   # path to your cloned private memory repo
+
+# ─── v2 ──────────────────────────────────────────────────────────────────────
+# v2 needs its OWN Telegram bot token. v1 and v2 cannot both long-poll
+# getUpdates on one token — two consumers of one offset steal each other's
+# messages. Create a second bot with @BotFather and put its token here.
+v2:
+  telegram_bot_token: ""        # required
+  telegram_chat_id: ""          # defaults to env.TELEGRAM_CHAT_ID
+  audio_repo: "~/bismuth-audio" # separate private repo, kept forever
+  runtime_dir: "~/.bismuth"
+  context_window: 200000        # what the 40% session reset is measured against
+  reset_pct: 0.40
+  max_concurrent_subagents: 3
+  subagent_budget_usd: 0.50     # per spawn — bounds a runaway worker
+  subagent_effort: "low"        # never thinking-disabled; see the decision log
+  whisper_model: "base"

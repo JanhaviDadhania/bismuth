@@ -44,6 +44,7 @@ STATE_TMP = HARNESS_DIR / ".state.json.tmp"
 LOG_FILE = HARNESS_DIR / "log.jsonl"
 PID_FILE = HARNESS_DIR / "harness.pid"
 PENDING_TASKS_DIR = HARNESS_DIR / "pending_tasks"
+SOUL_FILE = MEMORY_DIR / "soul.md"   # joint permanent principles; prepended to every system prompt
 INBOX_DIR = HARNESS_DIR / "inbox"
 INBOX_PRUNE_AGE_DAYS = 7
 
@@ -53,6 +54,8 @@ DEAD_LETTER_DIR = HARNESS_DIR / "dead_letter"
 WATCHER_STATE_DIR = HARNESS_DIR / "watcher_state"
 WATCHERS_DIR = BASE_DIR / "tools" / "watchers"
 TRACK_APPEND = BASE_DIR / "tools" / "track_append.py"
+USAGE_LOG = MEMORY_DIR / "projects" / "bismuth" / "usage_log.jsonl"
+TRANSCRIPTS_DIR = MEMORY_DIR / "projects" / "bismuth" / "transcripts"
 
 
 # ─── Tunables ────────────────────────────────────────────────────────────────
@@ -60,7 +63,13 @@ TRACK_APPEND = BASE_DIR / "tools" / "track_append.py"
 EXECUTOR_CAP = 3
 LONG_POLL_TIMEOUT = 50      # seconds — Telegram thread holds the connection this long
 MAIN_TICK = 1.0             # seconds — main loop max idle wait between mailbox/buffer checks
-AGENT_TIMEOUT = 600
+AGENT_TIMEOUT = 180  # 3 min per conversational turn — long work belongs in executors
+TIMEOUT_NOTICE = (
+    "[system] Your previous turn was killed at the 3-minute limit. Do not do "
+    "long-running work inline — spawn an executor and reply short. If the work "
+    "truly cannot be delegated, continue now, but be quick."
+)
+CONTEXT_ALERT_TOKENS = 120_000  # inject a [context] notice past this; agent decides (protocol 04)
 TRANSCRIBE_TIMEOUT = 300
 TELEGRAM_API = "https://api.telegram.org/bot{token}/{method}"
 POLLER_BACKOFF_MAX = 60     # seconds — cap for exponential backoff on telegram errors
@@ -163,13 +172,15 @@ def reset_session(agent_name: str, state: dict):
 
 
 SESSION_START_ASSISTANT = (
-    "[session start — read mood.md and second_order_thoughts.md once for context; "
+    "[session start — read summary.md (if present), mood.md and "
+    "second_order_thoughts.md once for context; "
     "you won't re-read them during this session]"
 )
 
 SESSION_START_COFFEECHAT = (
-    "[session start — read projects/{project}/vision.md, projects/{project}/nexttodo.md, "
-    "projects/{project}/reference/register.md (if it exists), projects/{project}/coffeechat/ "
+    "[session start — read projects/{project}/summary.md, projects/{project}/vision.md, "
+    "projects/{project}/nexttodo.md, projects/{project}/reference/summary.md "
+    "(if it exists), projects/{project}/coffeechat/ "
     "(if it exists), last few entries of mood.md, and second_order_thoughts.md once for "
     "context; you won't re-read them during this session]"
 )
@@ -914,11 +925,14 @@ def read_mailbox(state: dict) -> list[str]:
             synthetic.append(f"[executor #{short} for {project}]: DONE — {summary}")
             info["result_relayed"] = True
             info["status"] = "done"
+            _log_executor_usage(exec_dir, uid, info.get("task_id", "unknown"), "done")
+            _track_executor_done(project, info.get("task_id", "unknown"), summary)
 
         elif status == "failed" and not info.get("result_relayed"):
             synthetic.append(f"[executor #{short} for {project}]: FAILED — check {exec_dir}/stderr.log")
             info["result_relayed"] = True
             info["status"] = "failed"
+            _log_executor_usage(exec_dir, uid, info.get("task_id", "unknown"), "failed")
 
         # An answer written after the executor finished was never seen by it.
         if (status in ("done", "failed") and ans.exists()
@@ -951,6 +965,37 @@ def _substitute(text: str, project: str = "general") -> str:
 
 SKILL_SEPARATOR = "\n\n---\n\n"
 
+PROTOCOLS_DIR = BASE_DIR / "protocols"
+
+# Which protocols each mode loads, in numeric order. Prompts carry identity
+# and judgment; protocols carry the exact contracts. Keep this map in sync
+# with protocols/00_index.md.
+# Hot protocols only — contracts that fire often or fail hard. Cold protocols
+# (09 reminders, 10 watchers, 12 skills, 13 project creation) stay on disk;
+# the mode prompts carry their triggers and Bismuth reads them on demand.
+PROTOCOLS_BY_MODE = {
+    "assistant":  ["01", "02", "03", "04", "05", "06", "07", "08", "16", "17"],
+    "coffeechat": ["01", "03", "04", "05", "06", "07", "08", "14", "16", "17"],
+    "executor":   ["01", "04", "05", "11", "19"],
+}
+
+
+def _load_protocols(mode: str) -> str:
+    """Concatenate the protocol files for a mode, in numeric order.
+    Returns '' if the mode has no protocols or the dir is missing."""
+    parts = []
+    for prefix in PROTOCOLS_BY_MODE.get(mode, []):
+        matches = sorted(PROTOCOLS_DIR.glob(f"{prefix}_*.md"))
+        if not matches:
+            log_event("protocol_missing", mode=mode, prefix=prefix)
+            continue
+        for f in matches:
+            try:
+                parts.append(f.read_text())
+            except Exception as e:
+                log_event("protocol_load_error", file=str(f), error=str(e))
+    return SKILL_SEPARATOR.join(parts)
+
 
 def _load_skills(skills_dir: Path) -> str:
     """Concatenate sorted *.md files under skills_dir. Returns '' if dir missing or empty."""
@@ -965,20 +1010,42 @@ def _load_skills(skills_dir: Path) -> str:
     return SKILL_SEPARATOR.join(parts)
 
 
+def _load_soul() -> str:
+    """The joint soul: permanent principles, loaded into every system prompt.
+    Returns '' if the file is missing. Placed at the very front of the prompt
+    (the most stable position) so it rides the system-prompt cache: the claude
+    CLI auto-caches tools+system, and stable-content-first is the cache-optimal
+    ordering — soul.md only invalidates the cache on the rare edits to it."""
+    try:
+        return SOUL_FILE.read_text()
+    except FileNotFoundError:
+        return ""
+    except Exception as e:
+        log_event("soul_load_error", error=str(e))
+        return ""
+
+
 def build_prompt(agent_name: str) -> str:
     prompts_dir = BASE_DIR / "prompts"
+    soul = _load_soul()
+    soul_prefix = soul + SKILL_SEPARATOR if soul else ""
+    shared_skills = _load_skills(prompts_dir / "skills" / "shared")
     if agent_name == "assistant":
         base = (prompts_dir / "assistant.md").read_text()
+        protocols = _load_protocols("assistant")
         skills = _load_skills(prompts_dir / "skills" / "assistant")
-        full = base + (SKILL_SEPARATOR + skills if skills else "")
+        full = SKILL_SEPARATOR.join(
+            p for p in (soul, base, protocols, shared_skills, skills) if p)
         return _substitute(full)
     if agent_name.startswith("coffeechat:"):
         project = agent_name.split(":", 1)[1]
         base = (prompts_dir / "coffeechat.md").read_text()
+        protocols = _load_protocols("coffeechat")
         global_skills = _load_skills(prompts_dir / "skills" / "coffeechat")
         project_skills = _load_skills(MEMORY_DIR / "projects" / project / "skills")
-        extras = SKILL_SEPARATOR.join(s for s in (global_skills, project_skills) if s)
-        full = base + (SKILL_SEPARATOR + extras if extras else "")
+        full = SKILL_SEPARATOR.join(
+            p for p in (soul, base, protocols, shared_skills,
+                        global_skills, project_skills) if p)
         return _substitute(full, project=project)
     raise ValueError(f"unknown agent: {agent_name}")
 
@@ -995,18 +1062,22 @@ def _format_batch(batch: list[str]) -> str:
 
 
 def _invoke_claude(user_msg: str, system: str, session_id: str, is_new: bool):
-    """One claude subprocess call. New sessions create with --session-id and
-    receive the system prompt; resumed sessions use --resume and inherit the
-    prompt baked in at creation time."""
+    """One claude subprocess call. The system prompt is passed on EVERY call,
+    new or resumed, so protocol and skill edits apply on the next turn instead
+    of waiting for a session reset.
+
+    Uses --output-format stream-json so the final result line carries token
+    counts and total_cost_usd — we parse those out for usage_log.jsonl and
+    surface api_error_status on failure (it's stdout in this mode, not stderr)."""
+    common = ["--system-prompt", system,
+              "--output-format", "stream-json", "--verbose",
+              "--dangerously-skip-permissions"]
     if is_new:
         cmd = ["claude", "-p", user_msg,
-               "--session-id", session_id,
-               "--system-prompt", system,
-               "--dangerously-skip-permissions"]
+               "--session-id", session_id, *common]
     else:
         cmd = ["claude", "-p", user_msg,
-               "--resume", session_id,
-               "--dangerously-skip-permissions"]
+               "--resume", session_id, *common]
     return subprocess.run(
         cmd,
         cwd=str(BASE_DIR),
@@ -1015,11 +1086,139 @@ def _invoke_claude(user_msg: str, system: str, session_id: str, is_new: bool):
     )
 
 
+def _parse_stream_json(stdout: str) -> tuple[str, dict | None]:
+    """Find the final {'type':'result'} line in a stream-json transcript.
+    Returns (reply_text, result_obj). result_obj is None if no result line
+    was emitted (timeout, crash before completion, garbled output)."""
+    result_obj = None
+    for line in stdout.splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if obj.get("type") == "result":
+            result_obj = obj
+    if result_obj is None:
+        return "", None
+    return result_obj.get("result") or "", result_obj
+
+
+def append_usage_log(agent_name: str, result_obj: dict | None,
+                     exit_code: int, is_new: bool, session_id: str):
+    """Append one JSON line per attempt to projects/bismuth/usage_log.jsonl.
+    Records token counts, total_cost_usd, and error category — so monthly
+    spend and rate-limit incidents are inspectable after the fact."""
+    entry: dict = {
+        "ts": datetime.now().isoformat(),
+        "agent": agent_name,
+        "session_id": session_id,
+        "new_session": is_new,
+        "exit_code": exit_code,
+    }
+    if result_obj is not None:
+        entry["is_error"] = result_obj.get("is_error", False)
+        entry["api_error_status"] = result_obj.get("api_error_status")
+        entry["duration_ms"] = result_obj.get("duration_ms")
+        entry["num_turns"] = result_obj.get("num_turns")
+        entry["total_cost_usd"] = result_obj.get("total_cost_usd")
+        entry["usage"] = result_obj.get("usage")
+        entry["modelUsage"] = result_obj.get("modelUsage")
+    try:
+        USAGE_LOG.parent.mkdir(parents=True, exist_ok=True)
+        with open(USAGE_LOG, "a") as f:
+            f.write(json.dumps(entry) + "\n")
+    except Exception as e:
+        log_event("usage_log_write_error", error=str(e))
+
+
+def _flag_context_growth(agent_name: str, result_obj: dict | None,
+                         session_id: str, state: dict):
+    """One-shot per session: when a turn's total input context passes
+    CONTEXT_ALERT_TOKENS, flag it in state. The main loop prepends a
+    [context] notice to the next batch; what to do about it is the agent's
+    call under the Context Management Protocol."""
+    usage = (result_obj or {}).get("usage") or {}
+    context_tokens = (usage.get("input_tokens", 0)
+                      + usage.get("cache_read_input_tokens", 0)
+                      + usage.get("cache_creation_input_tokens", 0))
+    if context_tokens < CONTEXT_ALERT_TOKENS:
+        return
+    if state.get("context_alerted_session") == session_id:
+        return
+    state["context_alerted_session"] = session_id
+    state["context_alert_tokens"] = context_tokens
+    log_event("context_alert", agent=agent_name, session=session_id,
+              context_tokens=context_tokens)
+
+
+def append_transcript(agent_name: str, session_id: str, stdout: str,
+                      user_msg: str | None = None):
+    """Persist the full stream-json event stream — the exact input sent to the
+    model, every assistant message, every tool call with its input params, and
+    every tool result — to a daily JSONL under projects/bismuth/transcripts/.
+    Python-owned: agents never write here."""
+    try:
+        TRANSCRIPTS_DIR.mkdir(parents=True, exist_ok=True)
+        path = TRANSCRIPTS_DIR / f"{datetime.now():%Y-%m-%d}.jsonl"
+        envelope = {"ts": datetime.now().isoformat(), "agent": agent_name,
+                    "session_id": session_id}
+        with open(path, "a") as f:
+            if user_msg is not None:
+                f.write(json.dumps(
+                    {**envelope, "event": {"type": "harness_input",
+                                           "text": user_msg}}) + "\n")
+            for line in stdout.splitlines():
+                line = line.strip()
+                if not line.startswith("{"):
+                    continue
+                try:
+                    obj = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                f.write(json.dumps({**envelope, "event": obj}) + "\n")
+    except Exception as e:
+        log_event("transcript_write_error", error=str(e))
+
+
+def _log_executor_usage(exec_dir: Path, uid: str, task_id: str, status: str):
+    """Parse the executor's stream-json stdout.log for its final result line
+    and log token counts + cost. Called from the DONE/FAILED relay, which
+    runs exactly once per executor."""
+    try:
+        stdout = (exec_dir / "stdout.log").read_text()
+    except OSError:
+        stdout = ""
+    _, result_obj = _parse_stream_json(stdout)
+    append_usage_log(f"executor:{task_id}", result_obj,
+                     0 if status == "done" else 1, True, uid)
+    append_transcript(f"executor:{task_id}", uid, stdout)
+
+
+def _track_executor_done(project: str, task_id: str, summary: str):
+    """Runtime-owned tracking: log executor completions to tracking.md via the
+    locked append CLI, so agents don't have to log executor work themselves."""
+    entry = f"- [{datetime.now():%Y-%m-%d}] executor {task_id}: {summary[:200]}"
+    cmd = ["python3", str(TRACK_APPEND), str(MEMORY_DIR / "tracking.md"), entry]
+    if project and project != "general":
+        cmd += ["--project", project]
+    try:
+        subprocess.run(cmd, capture_output=True, timeout=10)
+    except Exception as e:
+        log_event("track_executor_error", error=str(e))
+
+
 def run_agent(agent_name: str, batch: list[str], state: dict) -> tuple[str, int]:
     """One agent turn, with one retry: any failure (nonzero exit, timeout,
     lost session) gets a second attempt in a brand-new session. A fresh
     session on a transient error costs context; losing janhavi's messages
-    costs more."""
+    costs more.
+
+    Returns (reply_text, exit_code). reply_text is the assistant's text
+    extracted from the stream-json result line — that's what callers feed
+    into parse_tokens()."""
     system = build_prompt(agent_name)
     session_id, is_new = get_or_create_session(agent_name, state)
     attempt_batch = ([session_start_marker(agent_name)] + batch) if is_new else batch
@@ -1027,40 +1226,82 @@ def run_agent(agent_name: str, batch: list[str], state: dict) -> tuple[str, int]
               session=session_id, new_session=is_new)
 
     result = None
+    timed_out = False
     try:
         result = _invoke_claude(_format_batch(attempt_batch), system, session_id, is_new)
     except subprocess.TimeoutExpired:
+        timed_out = True
         log_event("agent_timeout", agent=agent_name, session=session_id)
-
-    if result is not None and result.returncode == 0:
-        touch_session(agent_name, state)
-        log_event("agent_done", agent=agent_name, exit_code=0)
-        return result.stdout, 0
+        append_usage_log(agent_name, None, -1, is_new, session_id)
 
     if result is not None:
+        reply_text, result_obj = _parse_stream_json(result.stdout or "")
+        append_usage_log(agent_name, result_obj, result.returncode, is_new, session_id)
+        append_transcript(agent_name, session_id, result.stdout or "",
+                          _format_batch(attempt_batch))
+        if result.returncode == 0:
+            touch_session(agent_name, state)
+            _flag_context_growth(agent_name, result_obj, session_id, state)
+            log_event("agent_done", agent=agent_name, exit_code=0,
+                      cost_usd=(result_obj or {}).get("total_cost_usd"))
+            return reply_text, 0
+
         if not is_new and _session_not_found(result.stderr or "", session_id):
             log_event("session_lost", agent=agent_name, session=session_id)
         else:
             log_event("agent_attempt_failed", agent=agent_name,
                       exit_code=result.returncode,
-                      stderr_tail=(result.stderr or "")[-300:])
+                      api_error_status=(result_obj or {}).get("api_error_status"),
+                      stderr_tail=(result.stderr or "")[-300:],
+                      stdout_tail=(result.stdout or "")[-300:])
+
+    if timed_out and not is_new:
+        # Timeout on a live session: keep the session — its context is worth
+        # more than a clean slate. Tell the agent why the turn died and give
+        # it one more window to delegate and reply short.
+        log_event("agent_retry_timeout", agent=agent_name, session=session_id)
+        retry_batch = [TIMEOUT_NOTICE] + batch
+        try:
+            result = _invoke_claude(_format_batch(retry_batch), system,
+                                    session_id, False)
+        except subprocess.TimeoutExpired:
+            log_event("agent_timeout", agent=agent_name, session=session_id)
+            append_usage_log(agent_name, None, -1, False, session_id)
+            return "", -1
+        reply_text, result_obj = _parse_stream_json(result.stdout or "")
+        append_usage_log(agent_name, result_obj, result.returncode, False, session_id)
+        append_transcript(agent_name, session_id, result.stdout or "",
+                          _format_batch(retry_batch))
+        if result.returncode == 0:
+            touch_session(agent_name, state)
+            _flag_context_growth(agent_name, result_obj, session_id, state)
+        log_event("agent_done", agent=agent_name, exit_code=result.returncode,
+                  cost_usd=(result_obj or {}).get("total_cost_usd"))
+        return reply_text, result.returncode
 
     # Retry once with a fresh session.
     reset_session(agent_name, state)
     new_id, _ = get_or_create_session(agent_name, state)
     log_event("agent_retry_fresh", agent=agent_name, session=new_id)
+    fresh_batch = ([session_start_marker(agent_name)]
+                   + ([TIMEOUT_NOTICE] if timed_out else [])
+                   + batch)
     try:
-        result = _invoke_claude(
-            _format_batch([session_start_marker(agent_name)] + batch),
-            system, new_id, True,
-        )
+        result = _invoke_claude(_format_batch(fresh_batch), system, new_id, True)
     except subprocess.TimeoutExpired:
         log_event("agent_timeout", agent=agent_name, session=new_id)
+        append_usage_log(agent_name, None, -1, True, new_id)
         return "", -1
+    reply_text, result_obj = _parse_stream_json(result.stdout or "")
+    append_usage_log(agent_name, result_obj, result.returncode, True, new_id)
+    append_transcript(agent_name, new_id, result.stdout or "",
+                      _format_batch(fresh_batch))
     if result.returncode == 0:
         touch_session(agent_name, state)
-    log_event("agent_done", agent=agent_name, exit_code=result.returncode)
-    return result.stdout, result.returncode
+        _flag_context_growth(agent_name, result_obj, new_id, state)
+    log_event("agent_done", agent=agent_name, exit_code=result.returncode,
+              cost_usd=(result_obj or {}).get("total_cost_usd"))
+    return reply_text, result.returncode
 
 
 # ─── Exit token parsing ──────────────────────────────────────────────────────
@@ -1110,11 +1351,12 @@ def spawn_executor(task_id: str, project: str, state: dict) -> bool:
     pending.unlink()
 
     template = (BASE_DIR / "prompts" / "executor.md").read_text()
-    system = (template
-              .replace("{MEMORY_DIR}", str(MEMORY_DIR))
-              .replace("{EXEC_DIR}", str(exec_dir))
-              .replace("{TRACK_APPEND}", str(TRACK_APPEND))
-              .replace("{PROJECT}", project))
+    protocols = _load_protocols("executor")
+    soul = _load_soul()
+    system = _substitute(
+        SKILL_SEPARATOR.join(p for p in (soul, template, protocols) if p),
+        project=project,
+    ).replace("{EXEC_DIR}", str(exec_dir))
 
     user_msg = f"Your task is in {exec_dir / 'task.md'}. Read it and begin."
 
@@ -1124,6 +1366,7 @@ def spawn_executor(task_id: str, project: str, state: dict) -> bool:
         proc = subprocess.Popen(
             ["claude", "-p", user_msg,
              "--system-prompt", system,
+             "--output-format", "stream-json", "--verbose",
              "--dangerously-skip-permissions"],
             cwd=str(BASE_DIR),
             stdout=stdout_log,
@@ -1424,6 +1667,16 @@ def main():
                 if not batch:
                     write_state(state)
                     continue
+
+                alert_tokens = state.pop("context_alert_tokens", None)
+                if alert_tokens:
+                    batch = [
+                        f"[context] this session is holding ~{alert_tokens // 1000}k "
+                        f"tokens of context. Take a call per the Context Management "
+                        f"Protocol: flush what needs a home into files and "
+                        f"RESET_SESSION, or finish the live thought first — "
+                        f"then flush and reset. Do not ignore this."
+                    ] + batch
 
                 stdout, code = run_agent(state["active_agent"], batch, state)
                 consumed = ([p for _, p in inbox_entries]

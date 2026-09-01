@@ -40,6 +40,7 @@ home/
 │   ├── telegram_cli.py   send-only Telegram CLI used by agents
 │   ├── track_append.py   flock'd append for shared files (tracking.md)
 │   ├── transcribe.py     voice → text (faster-whisper); also a CLI
+│   ├── board.py          memory tree → one infinite-canvas board.html
 │   ├── tts.py            macOS `say` wrapper
 │   ├── r2d2_chirp.py     chirp synth for the robot body
 │   └── watchers/         auto-supervised sensors (daily_reminder, fs_dropbox, …)
