@@ -19,7 +19,7 @@ v2:
   audio_repo: "~/bismuth-audio" # separate private repo, kept forever
   runtime_dir: "~/.bismuth"
   context_window: 200000        # what the 40% session reset is measured against
-  reset_pct: 0.40
+  reset_pct: 0.60
   max_concurrent_subagents: 3
   subagent_budget_usd: 0.50     # per spawn — bounds a runaway worker
   subagent_effort: "low"        # never thinking-disabled; see the decision log
