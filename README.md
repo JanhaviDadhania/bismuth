@@ -63,6 +63,16 @@ After the runtime stripping, `prompts/v2/main_agent.md` and
 skills, no protocols, no MCP. If you want to change how Bismuth behaves, that
 is where you go.
 
+## Architecture
+
+An interactive, zoomable diagram of the whole system — the turn flow, the
+session's automatic token-based reset, the intent types, and what a sub-agent
+can touch — is at [`docs/architecture_diagram.html`](docs/architecture_diagram.html).
+Open it directly in a browser; it is self-contained, with no server and no
+network calls.
+
+![Bismuth v2 architecture diagram](docs/architecture_diagram_screenshot.png)
+
 ## v1
 
 Gone from this branch: the harness, protocols, watchers, the mailbox, modes,

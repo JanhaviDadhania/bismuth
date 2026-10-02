@@ -88,7 +88,7 @@ TELEGRAM_MSG_LIMIT = 4000                                 # split above this
 
 MAIN_MODEL = _v2.get("main_model") or None                # None = CLI default
 CONTEXT_WINDOW = int(_v2.get("context_window", 200_000))
-RESET_PCT = float(_v2.get("reset_pct", 0.40))             # hard reset at 40%
+RESET_PCT = float(_v2.get("reset_pct", 0.60))             # hard reset at 40%
 MAIN_AGENT_TIMEOUT = int(_v2.get("main_agent_timeout", 600))
 DONE_TAIL = int(_v2.get("done_tail", 5))                  # §4.8 concession
 ACK_TAIL = int(_v2.get("ack_tail", 10))                   # board strip

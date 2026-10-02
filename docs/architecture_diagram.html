@@ -1,0 +1,804 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Bismuth v2 — Architecture Diagram</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --panel2: #1e222c;
+    --border: #2c313d;
+    --accent: #7dd3fc;
+    --accent2: #fbbf24;
+    --accent3: #86efac;
+    --accent4: #f472b6;
+    --text: #e5e7eb;
+    --muted: #9ca3af;
+    --mono: "SF Mono", "Fira Code", Consolas, Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    height: 100%;
+    overflow: hidden;
+  }
+  #topbar {
+    position: fixed; top: 0; left: 0; right: 0; height: 56px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 14px;
+    padding: 0 16px;
+    z-index: 1000;
+  }
+  #topbar h1 {
+    font-size: 15px; margin: 0; font-weight: 600; color: var(--text);
+    white-space: nowrap;
+  }
+  #topbar .sub {
+    font-size: 11px; color: var(--muted); white-space: nowrap;
+  }
+  #topbar button {
+    background: var(--panel2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 6px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+  }
+  #topbar button:hover { background: #262b36; border-color: var(--accent); }
+  #zoomlabel {
+    font-size: 11px; color: var(--muted); min-width: 48px; text-align: center;
+  }
+  #hint {
+    margin-left: auto;
+    font-size: 11px; color: var(--muted);
+  }
+
+  #viewport {
+    position: absolute; top: 56px; left: 0; right: 0; bottom: 0;
+    overflow: hidden;
+    cursor: grab;
+    background-image:
+      radial-gradient(circle, #20242e 1px, transparent 1px);
+    background-size: 28px 28px;
+  }
+  #viewport.dragging { cursor: grabbing; }
+  #canvas {
+    position: absolute;
+    top: 0; left: 0;
+    transform-origin: 0 0;
+    width: 3200px;
+    height: 2000px;
+  }
+
+  .box {
+    position: absolute;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 12px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.35);
+  }
+  .box h2 {
+    margin: 0 0 4px 0;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .box .desc {
+    font-size: 11.5px;
+    color: var(--muted);
+    line-height: 1.45;
+  }
+  .box .num {
+    font-family: var(--mono);
+    color: var(--accent2);
+    background: rgba(251,191,36,0.08);
+    padding: 1px 4px;
+    border-radius: 4px;
+  }
+
+  .top-level { border-color: var(--accent); }
+  .top-level h2 { color: var(--accent); }
+  .worker-box { border-color: var(--accent3); }
+  .worker-box h2 { color: var(--accent3); }
+  .memory-box { border-color: var(--accent4); }
+  .memory-box h2 { color: var(--accent4); }
+  .her-box { border-color: var(--accent2); }
+  .her-box h2 { color: var(--accent2); }
+
+  .arrow-label {
+    position: absolute;
+    font-size: 10.5px;
+    color: var(--muted);
+    background: var(--bg);
+    padding: 1px 6px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    white-space: nowrap;
+    font-family: var(--mono);
+  }
+
+  svg.arrows {
+    position: absolute;
+    top: 0; left: 0;
+    width: 3200px;
+    height: 2000px;
+    pointer-events: none;
+  }
+
+  /* expandable detail panels */
+  details.panel {
+    margin-top: 6px;
+    border-top: 1px dashed var(--border);
+    padding-top: 6px;
+  }
+  details.panel > summary {
+    cursor: pointer;
+    font-size: 11.5px;
+    color: var(--accent);
+    list-style: none;
+    user-select: none;
+  }
+  details.panel > summary::-webkit-details-marker { display: none; }
+  details.panel > summary::before {
+    content: "▸ ";
+    display: inline-block;
+    transition: transform 0.15s ease;
+  }
+  details.panel[open] > summary::before {
+    content: "▾ ";
+  }
+  details.panel .inner {
+    font-size: 11px;
+    color: var(--muted);
+    line-height: 1.55;
+    padding: 6px 2px 2px 10px;
+  }
+  details.panel .inner table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 6px 0;
+  }
+  details.panel .inner table td, details.panel .inner table th {
+    border: 1px solid var(--border);
+    padding: 3px 6px;
+    font-size: 10.5px;
+    text-align: left;
+  }
+  details.panel .inner code {
+    font-family: var(--mono);
+    background: #0b0d11;
+    padding: 1px 4px;
+    border-radius: 3px;
+    color: var(--accent3);
+  }
+  details.panel .inner .const {
+    color: var(--accent2);
+    font-weight: 600;
+  }
+  details.panel .inner ul {
+    margin: 4px 0 4px 16px;
+    padding: 0;
+  }
+  details.panel .inner li { margin-bottom: 3px; }
+
+  /* nested detail indentation */
+  details.panel details.panel {
+    margin-left: 4px;
+  }
+
+  #minimap {
+    position: fixed;
+    bottom: 14px; right: 14px;
+    width: 180px; height: 110px;
+    background: rgba(23,26,33,0.85);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    z-index: 999;
+    overflow: hidden;
+  }
+  #minimap .mmbox {
+    position: absolute;
+    background: rgba(125,211,252,0.25);
+    border: 1px solid var(--accent);
+  }
+  #minimap .mmview {
+    position: absolute;
+    border: 1px solid var(--accent2);
+    background: rgba(251,191,36,0.08);
+  }
+
+  .legend {
+    position: fixed;
+    bottom: 14px; left: 14px;
+    background: rgba(23,26,33,0.9);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 10.5px;
+    color: var(--muted);
+    z-index: 999;
+    max-width: 320px;
+    line-height: 1.5;
+  }
+  .legend b { color: var(--text); }
+  .legend .swatch {
+    display: inline-block;
+    width: 9px; height: 9px;
+    border-radius: 2px;
+    margin-right: 4px;
+  }
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <h1>Bismuth v2 — Architecture</h1>
+  <span class="sub">phone → main agent (no tools) → intents → workers → memory. Click/expand boxes for detail.</span>
+  <button id="zoomout">−</button>
+  <span id="zoomlabel">100%</span>
+  <button id="zoomin">+</button>
+  <button id="reset">Reset view</button>
+  <button id="expandall">Expand all</button>
+  <button id="collapseall">Collapse all</button>
+  <span id="hint">drag to pan · scroll/pinch to zoom · click ▸ to expand</span>
+</div>
+
+<div id="viewport">
+  <div id="canvas">
+    <svg class="arrows" id="arrowsvg">
+      <defs>
+        <marker id="arrowhead" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+          <path d="M0,0 L6,3 L0,6 Z" fill="#9ca3af"/>
+        </marker>
+      </defs>
+      <!-- phone -> main agent -->
+      <line x1="230" y1="140" x2="420" y2="140" stroke="#9ca3af" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+      <!-- main agent -> turn queue (feedback loop from subagents / schedules) -->
+      <line x1="560" y1="200" x2="560" y2="260" stroke="#9ca3af" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+      <!-- main agent -> intents -->
+      <line x1="770" y1="140" x2="900" y2="140" stroke="#9ca3af" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+      <!-- intents -> workers -->
+      <line x1="1110" y1="140" x2="1260" y2="140" stroke="#9ca3af" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+      <!-- intents -> telegram reply -->
+      <line x1="960" y1="200" x2="960" y2="330" stroke="#9ca3af" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+      <!-- workers -> memory -->
+      <line x1="1470" y1="140" x2="1620" y2="140" stroke="#9ca3af" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+      <!-- workers -> turn queue (results feed back) -->
+      <path d="M1340,200 C1340,420 560,420 560,260" stroke="#86efac" stroke-width="1.5" fill="none" marker-end="url(#arrowhead)" stroke-dasharray="4 3"/>
+      <!-- schedules -> turn queue -->
+      <line x1="595" y1="780" x2="595" y2="763" stroke="#fbbf24" stroke-width="1.5" marker-end="url(#arrowhead)" stroke-dasharray="4 3"/>
+      <!-- memory -> her (board) -->
+      <path d="M1700,200 C1700,520 260,520 260,200" stroke="#f472b6" stroke-width="1.5" fill="none" marker-end="url(#arrowhead)" stroke-dasharray="4 3"/>
+      <!-- trace underlies everything -->
+      <line x1="230" y1="860" x2="1900" y2="860" stroke="#4b5563" stroke-width="1.5" stroke-dasharray="2 4"/>
+    </svg>
+
+    <!-- ══════════ TOP LEVEL ══════════ -->
+
+    <div class="box her-box" style="left:60px; top:90px; width:170px;">
+      <h2>👤 Her (Janhavi)</h2>
+      <div class="desc">Speaks into her phone. Only channel in/out. Only the main agent's voice reaches her.</div>
+    </div>
+
+    <div class="box top-level" style="left:420px; top:60px; width:350px;">
+      <h2>📝 Notes / turn input</h2>
+      <div class="desc">
+        Telegram voice/text note → STT → one of three labelled turn inputs, exactly one per turn:
+        <code style="font-family:monospace;color:#7dd3fc">NOTE</code> ·
+        <code style="font-family:monospace;color:#7dd3fc">SUBAGENT_RESULT</code> ·
+        <code style="font-family:monospace;color:#7dd3fc">SYSTEM</code>
+      </div>
+
+      <details class="panel">
+        <summary>Expand: turn-input blocks (exact text injected every turn)</summary>
+        <div class="inner">
+          <p>The runtime assembles a single text blob per turn from labelled blocks (<code>v2/mainagent.py: build_turn_input</code>):</p>
+          <ul>
+            <li><b>DESTINATIONS</b> — the full memory tree + which folders carry a <code>CLAUDE.md</code> (<code>*</code> marker). ~3.2k tokens. Sent only on a new session or when the tree's fingerprint changes (not every turn).</li>
+            <li><b>TOOLS</b> — index of what a worker's <code>Bash</code> can reach, read from <code>~/bismuth-memory/_tools/*.md</code> cards. Rides the same fingerprint gate as DESTINATIONS.</li>
+            <li><b>TASKS</b> — the full live task list (<code>unclear</code> / <code>working</code>), sent <i>every</i> turn — this is what makes the session disposable.</li>
+            <li><b>RECENT</b> — last <span class="const">DONE_TAIL = 5</span> completed tasks, one line each (config: <code>done_tail</code>).</li>
+            <li><b>OTHERS</b> — what's currently parked in <code>others/</code>, with a count.</li>
+            <li>Then exactly one of: <b>NOTE</b> (from her, transcribed), <b>SUBAGENT_RESULT</b> (a worker finished — "she has not seen this"), or <b>SYSTEM</b> (a schedule fired or went overdue — "she has not seen this").</li>
+          </ul>
+        </div>
+      </details>
+    </div>
+
+    <!-- MAIN AGENT -->
+    <div class="box top-level" style="left:420px; top:260px; width:350px;">
+      <h2>🧠 Main agent — <span class="num">--tools ""</span></h2>
+      <div class="desc">
+        <code>claude -p</code>, one continuing session, one turn at a time, serialized.
+        <b>It decides, it never does.</b> With no tools it cannot read/write/run anything —
+        enforced by the CLI flag, not a prompt convention. Output: a single JSON object validated by
+        <code>--json-schema intent_schema.json</code>.
+      </div>
+
+      <details class="panel">
+        <summary>Expand: the turn queue &amp; serialization</summary>
+        <div class="inner">
+          One serialized queue (<code>state.json: turn_queue</code>) holds <b>both</b> incoming notes
+          <i>and</i> finished sub-agent results, in arrival order — one queue, one turn at a time,
+          whichever the source. A sub-agent's terminal result is enqueued durably
+          <i>before</i> its process is reaped — that write is the commit point; lose it and the
+          result never reaches the agent and its task hangs in <code>working</code> forever
+          (the one tier-1 state with no rebuild path).
+          <br><br>
+          Scheduled work (<code>_schedules/*.md</code>, see the Schedules box below) also enters this
+          same queue as a <code>SYSTEM</code> item and does <b>not</b> preempt — "08:30" means
+          "the next free slot after 08:30."
+        </div>
+      </details>
+
+      <details class="panel">
+        <summary>Expand: session lifecycle &amp; the auto-reset mechanism</summary>
+        <div class="inner">
+          <p><b>One continuing <code>claude -p</code> session</b>, resumed via <code>--session-id</code> (new)
+          / <code>--resume &lt;id&gt;</code> (continuing). Session state lives in tier-1
+          <code>state.json: session = {id, started_at, window_size, tokens, turns}</code>.</p>
+          <p><b>Hard, automatic reset</b> — no judgement call — once the session's
+          cumulative token count (measured from <code>claude -p</code>'s own <code>result.usage</code>
+          on every turn, not estimated from characters) reaches a threshold of the model's context window:</p>
+          <table>
+            <tr><th>Constant</th><th>Value (today, 2026-10-02)</th><th>Where</th></tr>
+            <tr><td><code>CONTEXT_WINDOW</code></td><td class="const">200,000 tokens (default)</td><td><code>v2/config.py</code> — <code>v2.context_window</code> in config.yaml</td></tr>
+            <tr><td><code>RESET_PCT</code></td><td class="const">0.60 (60%)</td><td><code>v2/config.py</code> — <code>v2.reset_pct</code></td></tr>
+            <tr><td>Reset fires at</td><td class="const">200,000 × 0.60 = 120,000 tokens</td><td><code>mainagent.needs_reset()</code></td></tr>
+          </table>
+          <p>Checked after every turn in <code>runtime.process_turn()</code> via
+          <code>mainagent.needs_reset(session)</code>; the comparison is
+          <code>session.tokens >= window_size * RESET_PCT</code>. The running total is the sum of
+          <code>input_tokens + cache_creation_input_tokens + cache_read_input_tokens + output_tokens</code>
+          from the final <code>result</code> event of the subprocess stream.</p>
+          <p>Trace event on reset: <code>session_reset</code> with
+          <code>reason: "requested" | "context_40pct"</code> (the event name/reason string is a holdover
+          from an earlier 40% design value in the architecture doc — the code constant is now 0.60/60%).</p>
+          <p><b>Session reset on request:</b> she can say "reset the session when you're done" →
+          <code>session_reset</code> intent → <code>reset_requested=True</code> → deferred until every
+          spawned worker for the current note has settled (<code>pending_reset_ids</code> empties out),
+          then the session is dropped in <code>runtime._maybe_reset()</code>.</p>
+          <p>Because <b>TASKS is resent every turn</b> (see above), a reset loses no open work —
+          nothing load-bearing lives inside the model's own context.</p>
+          <p>Other main-agent numeric constants (<code>v2/config.py</code>):</p>
+          <ul>
+            <li><code>MAIN_AGENT_TIMEOUT</code> = <span class="const">600s</span> (subprocess.Popen timeout for one turn)</li>
+            <li><code>DONE_TAIL</code> = <span class="const">5</span> (RECENT block size)</li>
+            <li><code>ACK_TAIL</code> = <span class="const">10</span> (board's ack strip size)</li>
+          </ul>
+        </div>
+      </details>
+
+      <details class="panel">
+        <summary>Expand: intent types (the main agent's only output)</summary>
+        <div class="inner">
+          <p>Output is <code>{"intents": [...]}"</code>, validated against
+          <code>prompts/v2/intent_schema.json</code>, performed by the runtime
+          (<code>v2/intents.py: Executor</code>) in listed order — one trace event per intent.
+          Ten valid types (<code>VALID_TYPES</code> in <code>intents.py</code>):</p>
+          <table>
+            <tr><th>type</th><th>required fields</th><th>what the runtime does</th></tr>
+            <tr><td><code>route</code></td><td>destination, mode, reason, instruction</td><td>resolves against DESTINATIONS, spawns a write worker, or parks in <code>others/</code> if unroutable</td></tr>
+            <tr><td><code>task_create</code></td><td>request, state, task_ref</td><td>opens a task as <code>unclear</code> or <code>working</code></td></tr>
+            <tr><td><code>task_ask</code></td><td>task_ref, question</td><td>sends the question to her, marks task <code>unclear</code></td></tr>
+            <tr><td><code>task_clarify</code></td><td>task_ref, answer</td><td>folds her answer in, moves task to <code>working</code></td></tr>
+            <tr><td><code>spawn</code></td><td>task_ref, instruction</td><td>one worker, one subtask</td></tr>
+            <tr><td><code>task_done</code></td><td>task_ref, text</td><td>closes task, tells her, drops it from the live list</td></tr>
+            <tr><td><code>reply</code></td><td>text</td><td>sends a message (channel: text|voice)</td></tr>
+            <tr><td><code>session_reset</code></td><td>—</td><td>defers a reset until the note is fully processed</td></tr>
+            <tr><td><code>schedule_create</code></td><td>name, every, at, body, summary</td><td>runtime writes a new <code>_schedules/*.md</code> itself</td></tr>
+            <tr><td><code>schedule_update</code></td><td>name</td><td>changes an existing schedule; <code>enabled:false</code> pauses it</td></tr>
+          </table>
+          <p><code>mode</code> is <code>declared | inferred | unroutable</code>. <code>kind</code> on
+          route/spawn is <code>write | search | other</code> (<code>search</code> = read-only retrieval worker).</p>
+        </div>
+      </details>
+
+      <details class="panel">
+        <summary>Expand: routing &amp; the DESTINATIONS guard</summary>
+        <div class="inner">
+          <p>The one hard guard: <b>the destination must already exist.</b> A tool-less agent can't
+          check a path itself, so the runtime injects the real memory tree every gated turn
+          (<code>v2/destinations.py: render()</code>), with a <code>*</code> marking folders that carry
+          a <code>CLAUDE.md</code>. <code>destinations.resolve()</code> re-checks the agent's chosen
+          path against the real filesystem — if it names something that isn't real, the route is
+          rejected (<code>route_rejected</code> trace event) and the note is parked in
+          <code>others/</code> instead (park-first, then ask).</p>
+          <p>Scan skips reserved/machine-owned dirs: <code>.git, .harness, __pycache__, node_modules,
+          .obsidian, trace, .bismuth, .venv</code>, anything starting with <code>_</code> or <code>.</code>,
+          and anything deeper than <code>MAX_DEPTH = 4</code>.</p>
+        </div>
+      </details>
+    </div>
+
+    <!-- INTENTS / EXECUTOR -->
+    <div class="box top-level" style="left:900px; top:60px; width:210px;">
+      <h2>⚙️ Intents → Executor</h2>
+      <div class="desc">
+        <code>v2/intents.py</code>. The <i>runtime</i> performs the agent's intents and writes a trace
+        event for each — the agent never touches disk itself.
+      </div>
+      <details class="panel">
+        <summary>Expand: what runtime does itself (not delegated)</summary>
+        <div class="inner">
+          Two things the runtime performs directly, never via a worker:
+          <ul>
+            <li>parking a note in <code>others/</code> — must be atomic, can't depend on a worker succeeding</li>
+            <li>sending Telegram messages — the agent has no tools, so every word she reads is text the runtime carries for it</li>
+          </ul>
+          Everything else (file writes, searches, tool investigation, installs) is a <code>spawn</code>
+          or <code>route</code> intent → a worker subprocess.
+        </div>
+      </details>
+    </div>
+
+    <div class="box" style="left:900px; top:330px; width:210px; border-color:#fb923c;">
+      <h2 style="color:#fb923c;">📱 Reply → Telegram</h2>
+      <div class="desc">
+        Text, voice (macOS <code>say</code> → ogg via <code>ffmpeg</code> → <code>sendVoice</code>),
+        images, docs, links. Only the main agent's voice. Quiet by default — acks live on the board,
+        not pushed to her.
+      </div>
+    </div>
+
+    <!-- WORKERS -->
+    <div class="box worker-box" style="left:1260px; top:60px; width:210px;">
+      <h2>🛠️ Sub-agent (worker)</h2>
+      <div class="desc">
+        <code>claude -p</code> subprocess, stripped bare. No identity, no skills, no MCP, no memory
+        of anything else. Receives one self-contained instruction and nothing else.
+      </div>
+
+      <details class="panel">
+        <summary>Expand: the four tools</summary>
+        <div class="inner">
+          <code>SUBAGENT_TOOLS = "Read,Write,Edit,Bash"</code> (<code>v2/config.py</code>).
+          <ul>
+            <li><code>Read</code>, <code>Write</code>, <code>Edit</code> — the memory writes, the whole job. Prefer Read+Edit over shelling out.</li>
+            <li><code>Bash</code> — the terminal; most expensive schema, and the one that lets a worker wander, kept anyway for reach (e.g. <code>silicon-browser</code> as a plain command).</li>
+          </ul>
+          <p>Measured cost of choosing <code>Bash</code> for a one-line file append vs <code>Read</code>+<code>Edit</code>:
+          <span class="const">118,011 tokens / $0.37</span> vs <span class="const">8,092 tokens / $0.024</span> — 15× cheaper, both correct.</p>
+          <p><b>TOOLS block</b>: beyond the fixed four, a worker's <code>Bash</code> can reach anything
+          named in <code>~/bismuth-memory/_tools/*.md</code> cards (e.g. <code>silicon-browser</code>).
+          The main agent gets only the index (name + one-line summary + card path); the worker reads
+          the card itself for the real command surface.</p>
+        </div>
+      </details>
+
+      <details class="panel">
+        <summary>Expand: spawn command &amp; constants</summary>
+        <div class="inner">
+          <pre style="white-space:pre-wrap; font-family:monospace; font-size:10px; color:#86efac;">claude -p "&lt;instruction&gt;" \
+  --output-format stream-json --verbose \
+  --system-prompt "&lt;prompts/v2/subagent.md&gt;" \
+  --tools "Read,Write,Edit,Bash" \
+  --strict-mcp-config --disable-slash-commands \
+  --permission-mode bypassPermissions \
+  --effort low \
+  --max-budget-usd &lt;cap&gt; \
+  &lt; /dev/null</pre>
+          <table>
+            <tr><td><code>SUBAGENT_EFFORT</code></td><td class="const">"low"</td><td>never thinking-disabled (that has a silent tool-call-in-text failure mode on Opus 5)</td></tr>
+            <tr><td><code>SUBAGENT_BUDGET_USD</code></td><td class="const">$2.00 default config</td><td>blast-radius cap per spawn (config.yaml.example ships 0.50)</td></tr>
+            <tr><td><code>SUBAGENT_TIMEOUT</code></td><td class="const">900s</td><td>subprocess.Popen timeout</td></tr>
+            <tr><td><code>MAX_CONCURRENT_SUBAGENTS</code></td><td class="const">3</td><td>ThreadPoolExecutor cap; queue beyond it</td></tr>
+          </table>
+          <p>Prefix cost, measured 2026-09-01: default spawn prefix <span class="const">26,155 tokens</span>
+          → stripped config <span class="const">4,824 tokens</span> (81.6% reduction); of that, 1,443 is
+          the subagent.md prompt, 2,584 is the four tool schemas, 797 is the irreducible carrier.</p>
+        </div>
+      </details>
+
+      <details class="panel">
+        <summary>Expand: terminal statuses (the entire protocol)</summary>
+        <div class="inner">
+          A worker ends in exactly one of three states — its final message is required to be a single
+          JSON object, e.g. <code>{"status":"done","summary":"..."}</code>:
+          <table>
+            <tr><th>status</th><th>meaning</th><th>what main agent does</th></tr>
+            <tr><td><code>done</code></td><td>work finished and self-verified (read-back)</td><td>closes subtask; tells her when the whole task is complete</td></tr>
+            <tr><td><code>needs_input</code></td><td>can't proceed without her answer</td><td>task → back to <code>unclear</code>; she's asked; a fresh worker is spawned later (nothing is resumed — workers are stateless)</td></tr>
+            <tr><td><code>failed</code></td><td>it broke</td><td>tells her, with the error</td></tr>
+          </table>
+          <p>A worker <b>never messages her</b> — no channel, no polling, no waiting. It exits; its
+          return value is read by the main agent on a later turn via a <code>SUBAGENT_RESULT</code> block.</p>
+        </div>
+      </details>
+    </div>
+
+    <!-- MEMORY -->
+    <div class="box memory-box" style="left:1620px; top:60px; width:230px;">
+      <h2>🗂️ ~/bismuth-memory</h2>
+      <div class="desc">
+        Markdown in git. <code>projects/</code>, <code>miniprojects/</code>, root files,
+        <code>reference/</code>, <code>others/</code> (parking folder), plus machine-owned
+        <code>_</code>-prefixed folders invisible to routing.
+      </div>
+      <details class="panel">
+        <summary>Expand: reserved machine folders &amp; CLAUDE.md</summary>
+        <div class="inner">
+          <ul>
+            <li><code>_schedules/*.md</code> — one file per recurring job; see Schedules box</li>
+            <li><code>_tools/*.md</code> — one card per installed tool a worker's Bash can reach</li>
+            <li><code>others/</code> — park-first-then-ask folder for unroutable notes; visible on the board with a count</li>
+            <li>5 per-folder <code>CLAUDE.md</code> files (~10.6 KB) — folder-local context; a stripped worker doesn't auto-discover these, so the main agent must name the path (or inline the key lines) in the instruction</li>
+          </ul>
+        </div>
+      </details>
+    </div>
+
+    <!-- HER MEMORY TREE LABEL -->
+    <div class="box" style="left:60px; top:330px; width:170px; border-color:#fbbf24;">
+      <h2 style="color:#fbbf24;">🖥️ board.html</h2>
+      <div class="desc">
+        Regenerated from the memory tree + trace by <code>tools/board.py</code> every
+        <span class="const">BOARD_REFRESH_INTERVAL = 120s</span>. Shows Tasks (NEEDS YOU / WORKING),
+        <code>others/</code> count, and a secondary ack/recently-done strip. Holds no state of its own.
+      </div>
+    </div>
+
+    <!-- TURN QUEUE -->
+    <div class="box" style="left:450px; top:600px; width:290px; border-color:#86efac;">
+      <h2 style="color:#86efac;">🔁 Turn queue (state.json)</h2>
+      <div class="desc">
+        One serialized queue, notes <b>and</b> sub-agent results <b>and</b> schedule firings, in
+        arrival order. Tier-1 authoritative state — the one piece with no rebuild path.
+      </div>
+      <details class="panel">
+        <summary>Expand: retry queue &amp; dedup ledger</summary>
+        <div class="inner">
+          <p><b>Retry queue</b> (<code>state.py: queue_retry / take_retries</code>): a turn that
+          errors out (<code>mainagent.run_turn</code> returns <code>error</code>) is <b>never</b>
+          silently dead-lettered. <code>runtime._turn_failed()</code> appends a <code>turn_failed</code>
+          trace event, pushes <code>{item, error, at}</code> onto <code>state.json: retry</code>, and
+          tells her over Telegram that the note is safe and queued for retry. This is the direct fix
+          for v1's 113-entry silent <code>dead_letter/</code>.</p>
+          <p><b>Dedup ledger</b> (<code>processed_ids</code>): keyed on Telegram's <code>update_id</code>,
+          caps at <span class="const">PROCESSED_IDS_KEEP = 5000</span> entries, makes redelivery
+          (e.g. after a crash before the offset advanced) a no-op.</p>
+          <p><b>Offset</b>: <code>getUpdates</code> offset only advances after a message is durably
+          spooled to disk — the spool write is the commit point, not the Telegram ack.</p>
+        </div>
+      </details>
+      <details class="panel">
+        <summary>Expand: state tiering (§6)</summary>
+        <div class="inner">
+          <table>
+            <tr><th>Tier</th><th>What</th><th>Delete it and…</th></tr>
+            <tr><td>1 — <code>state.json</code></td><td>offset, processed_ids, turn_queue, session, retry, schedules-bookkeeping</td><td>turn_queue loss = real work lost; rest is safe/replayable</td></tr>
+            <tr><td>2 — <code>tasks.json</code>, <code>subagents.json</code></td><td>derived cache</td><td>rebuilt instantly by folding the trace at boot</td></tr>
+            <tr><td>3 — in-memory</td><td>Popen handles, semaphore, sockets</td><td>dies with the process; boot reconciliation detects orphaned "running" workers and marks them <code>failed</code>, returning their task to <code>unclear</code></td></tr>
+          </table>
+        </div>
+      </details>
+    </div>
+
+    <!-- SCHEDULES -->
+    <div class="box" style="left:450px; top:780px; width:290px; border-color:#f472b6;">
+      <h2 style="color:#f472b6;">⏰ Schedules (_schedules/*.md)</h2>
+      <div class="desc">
+        Recurring work on a clock — a markdown file, not Python. Created/edited only via
+        <code>schedule_create</code> / <code>schedule_update</code> intents (runtime writes them,
+        never a worker — short structured data that must not fail).
+      </div>
+      <details class="panel">
+        <summary>Expand: frontmatter fields &amp; tick mechanism</summary>
+        <div class="inner">
+          <pre style="white-space:pre-wrap; font-family:monospace; font-size:10px; color:#86efac;">---
+every: daily      # daily | weekly | N_days
+at: "08:30"
+days: [sun]        # weekly only
+enabled: true
+budget_usd: 4.00
+produces: projects/x/{date}.txt
+min_bytes: 500
+summary: morning digest
+---
+Scroll x.com and write the digest to {MEMORY}/…/{date}.txt.</pre>
+          <p>Background loop checks every <span class="const">SCHEDULE_TICK_INTERVAL = 60s</span>.
+          <code>tick()</code> fires what's due (date-guard, not interval — "08:30" means next free
+          slot after, not every 60s), enqueuing a <code>SYSTEM</code> turn item that names the file
+          as the contract (never paraphrased).</p>
+          <p><code>check_overdue()</code> asks, independent of what the worker claimed, whether the
+          promised <code>produces:</code> artifact actually landed and is ≥ <code>min_bytes</code>,
+          <span class="const">SCHEDULE_OVERDUE_AFTER = 2 × 3600s (2h)</span> after firing. A worker
+          returning <code>done</code> is not evidence — this catches "worker lied", "worker failed",
+          and "main agent decided not to spawn anything at all."</p>
+        </div>
+      </details>
+    </div>
+
+    <!-- SESSION DETAIL moved as separate zoomed box for emphasis, linking to main agent -->
+    <div class="box" style="left:820px; top:780px; width:300px; border-color:#7dd3fc;">
+      <h2 style="color:#7dd3fc;">🗒️ Trace (append-only JSONL)</h2>
+      <div class="desc">
+        <code>~/bismuth-memory/trace/log-YYYY-MM.jsonl</code>. Single source of truth — board and
+        task list are projections of it, never separate files that can drift. <b>Never rotated.</b>
+      </div>
+      <details class="panel">
+        <summary>Expand: event fields &amp; ordering</summary>
+        <div class="inner">
+          <p>Every event carries <code>ts</code> (ISO 8601 + offset), <code>seq</code> (global,
+          gapless, monotonic — the authoritative sort key, assigned under the append lock; a gap in
+          <code>seq</code> means an event was lost), and <code>trace_id</code> (Telegram's
+          <code>update_id</code>, joins every event for one note).</p>
+          <p><code>TRACE_EVENT_CAP = 8,000</code> chars per field — the only thing bounding trace
+          growth since there's no rotation (one tool result can be an entire file read).</p>
+          <p>Event types include: <code>note_received, stt_done, route_decided, route_rejected,
+          memory_written, parked_in_others, task_created, task_question_asked, task_clarified,
+          task_blocked, task_done, subagent_spawned, subagent_event, subagent_done, subagent_failed,
+          agent_event, turn_usage, session_started, session_reset, reply_sent, reply_failed, ack,
+          turn_failed, retry_queued, schedule_created, schedule_updated, schedule_fired,
+          schedule_overdue, schedule_parse_failed, runtime_started, boot_reconciled,
+          background_check_failed, loop_error, runtime_stopped.</code></p>
+        </div>
+      </details>
+    </div>
+
+  </div>
+</div>
+
+<div id="minimap"></div>
+
+<div class="legend">
+  <div><span class="swatch" style="background:#7dd3fc;"></span><b>Blue</b> — core turn flow (note → agent → intents → worker)</div>
+  <div><span class="swatch" style="background:#86efac;"></span><b>Green</b> — worker / feedback loops (results re-enter the turn queue)</div>
+  <div><span class="swatch" style="background:#f472b6;"></span><b>Pink</b> — memory / trace (the permanent record)</div>
+  <div><span class="swatch" style="background:#fbbf24;"></span><b>Amber</b> — her / board / schedules</div>
+  <div style="margin-top:4px;">Dashed lines = asynchronous feedback (not a direct same-turn call).</div>
+</div>
+
+<script>
+(function() {
+  var viewport = document.getElementById('viewport');
+  var canvas = document.getElementById('canvas');
+  var zoomLabel = document.getElementById('zoomlabel');
+  var minimap = document.getElementById('minimap');
+
+  var scale = 0.55, panX = 40, panY = 20;
+  var isDragging = false, lastX = 0, lastY = 0;
+  var CANVAS_W = 3200, CANVAS_H = 2000;
+
+  function applyTransform() {
+    canvas.style.transform = 'translate(' + panX + 'px,' + panY + 'px) scale(' + scale + ')';
+    zoomLabel.textContent = Math.round(scale * 100) + '%';
+    updateMinimap();
+  }
+
+  function clampScale(s) {
+    return Math.min(2.2, Math.max(0.18, s));
+  }
+
+  viewport.addEventListener('wheel', function(e) {
+    e.preventDefault();
+    var rect = viewport.getBoundingClientRect();
+    var mx = e.clientX - rect.left;
+    var my = e.clientY - rect.top;
+    var delta = -e.deltaY * 0.0015;
+    var newScale = clampScale(scale * (1 + delta));
+    // keep the point under the cursor fixed
+    var wx = (mx - panX) / scale;
+    var wy = (my - panY) / scale;
+    panX = mx - wx * newScale;
+    panY = my - wy * newScale;
+    scale = newScale;
+    applyTransform();
+  }, { passive: false });
+
+  viewport.addEventListener('mousedown', function(e) {
+    // Don't drag when interacting with a <summary> or inside a box's text
+    isDragging = true;
+    lastX = e.clientX; lastY = e.clientY;
+    viewport.classList.add('dragging');
+  });
+  window.addEventListener('mousemove', function(e) {
+    if (!isDragging) return;
+    panX += (e.clientX - lastX);
+    panY += (e.clientY - lastY);
+    lastX = e.clientX; lastY = e.clientY;
+    applyTransform();
+  });
+  window.addEventListener('mouseup', function() {
+    isDragging = false;
+    viewport.classList.remove('dragging');
+  });
+
+  // touch support (basic single-finger pan, two-finger pinch)
+  var touchState = null;
+  viewport.addEventListener('touchstart', function(e) {
+    if (e.touches.length === 1) {
+      touchState = { mode: 'pan', x: e.touches[0].clientX, y: e.touches[0].clientY };
+    } else if (e.touches.length === 2) {
+      var dx = e.touches[0].clientX - e.touches[1].clientX;
+      var dy = e.touches[0].clientY - e.touches[1].clientY;
+      touchState = { mode: 'pinch', dist: Math.sqrt(dx*dx+dy*dy), scale: scale };
+    }
+  }, { passive: true });
+  viewport.addEventListener('touchmove', function(e) {
+    if (!touchState) return;
+    if (touchState.mode === 'pan' && e.touches.length === 1) {
+      var dx = e.touches[0].clientX - touchState.x;
+      var dy = e.touches[0].clientY - touchState.y;
+      panX += dx; panY += dy;
+      touchState.x = e.touches[0].clientX;
+      touchState.y = e.touches[0].clientY;
+      applyTransform();
+    } else if (touchState.mode === 'pinch' && e.touches.length === 2) {
+      var dx2 = e.touches[0].clientX - e.touches[1].clientX;
+      var dy2 = e.touches[0].clientY - e.touches[1].clientY;
+      var dist = Math.sqrt(dx2*dx2+dy2*dy2);
+      scale = clampScale(touchState.scale * (dist / touchState.dist));
+      applyTransform();
+    }
+  }, { passive: true });
+  viewport.addEventListener('touchend', function() { touchState = null; });
+
+  document.getElementById('zoomin').onclick = function() {
+    scale = clampScale(scale * 1.2); applyTransform();
+  };
+  document.getElementById('zoomout').onclick = function() {
+    scale = clampScale(scale / 1.2); applyTransform();
+  };
+  document.getElementById('reset').onclick = function() {
+    scale = 0.55; panX = 40; panY = 20; applyTransform();
+  };
+  document.getElementById('expandall').onclick = function() {
+    document.querySelectorAll('details.panel').forEach(function(d) { d.open = true; });
+  };
+  document.getElementById('collapseall').onclick = function() {
+    document.querySelectorAll('details.panel').forEach(function(d) { d.open = false; });
+  };
+
+  // minimap
+  function updateMinimap() {
+    minimap.innerHTML = '';
+    var mmW = minimap.clientWidth, mmH = minimap.clientHeight;
+    var sx = mmW / CANVAS_W, sy = mmH / CANVAS_H;
+    document.querySelectorAll('.box').forEach(function(box) {
+      var left = parseInt(box.style.left) || 0;
+      var top = parseInt(box.style.top) || 0;
+      var w = box.offsetWidth, h = box.offsetHeight;
+      var el = document.createElement('div');
+      el.className = 'mmbox';
+      el.style.left = (left * sx) + 'px';
+      el.style.top = (top * sy) + 'px';
+      el.style.width = Math.max(2, w * sx) + 'px';
+      el.style.height = Math.max(2, h * sy) + 'px';
+      minimap.appendChild(el);
+    });
+    var view = document.createElement('div');
+    view.className = 'mmview';
+    var vpRect = viewport.getBoundingClientRect();
+    var viewLeft = (-panX / scale) * sx;
+    var viewTop = (-panY / scale) * sy;
+    var viewW = (vpRect.width / scale) * sx;
+    var viewH = (vpRect.height / scale) * sy;
+    view.style.left = viewLeft + 'px';
+    view.style.top = viewTop + 'px';
+    view.style.width = viewW + 'px';
+    view.style.height = viewH + 'px';
+    minimap.appendChild(view);
+  }
+
+  // stop drag from starting when clicking inside a box (so text selection / detail toggling works)
+  document.querySelectorAll('.box').forEach(function(box) {
+    box.addEventListener('mousedown', function(e) { e.stopPropagation(); });
+    box.addEventListener('touchstart', function(e) { e.stopPropagation(); }, { passive: true });
+  });
+
+  applyTransform();
+  window.addEventListener('resize', updateMinimap);
+})();
+</script>
+
+</body>
+</html>
